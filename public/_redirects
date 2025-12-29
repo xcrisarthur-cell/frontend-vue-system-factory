@@ -1,0 +1,6 @@
+# Netlify Redirects File
+# This file ensures Vue Router works correctly with client-side routing
+# All routes should redirect to index.html for SPA functionality
+
+/*    /index.html   200
+
