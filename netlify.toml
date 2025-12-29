@@ -8,9 +8,9 @@
   # Directory to publish (Vite outputs to 'dist' by default)
   publish = "dist"
   
-  # Environment variables (if needed, uncomment and set)
-  # [build.environment]
-  #   NODE_VERSION = "18"
+  # Environment variables
+  [build.environment]
+    NODE_VERSION = "20"
 
 # Redirect rules for SPA (Single Page Application)
 # This ensures all routes work correctly with Vue Router

@@ -99,11 +99,20 @@ Setelah setup pertama, setiap push ke branch `main` akan otomatis trigger build 
 
 ### Build Fails
 
-**Error: Command not found**
+**Error: Vite requires Node.js version 20.19+ or 22.12+**
 ```bash
-# Pastikan Node.js version sesuai
-# Di Netlify: Site settings → Build & deploy → Environment
-# Set Node version: 18 atau 20
+# Vite 7 memerlukan Node.js 20.19+ atau 22.12+
+# File netlify.toml sudah dikonfigurasi dengan NODE_VERSION = "20"
+# Pastikan file netlify.toml sudah di-commit dan di-push
+# Atau set manual di Netlify: Site settings → Build & deploy → Environment
+# Set NODE_VERSION = "20"
+```
+
+**Error: crypto.hash is not a function**
+```bash
+# Error ini terjadi karena Node.js version tidak kompatibel
+# Pastikan menggunakan Node.js 20 atau 22
+# Cek BUILD_FIX.md untuk solusi lengkap
 ```
 
 **Error: Module not found**
