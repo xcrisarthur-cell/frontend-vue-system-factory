@@ -4,7 +4,7 @@
 Frontend aplikasi dikonfigurasi untuk menggunakan API backend yang sudah di-deploy di fly.io.
 
 ## API URL
-- **Production**: `https://backend-fastapi-system-factory.fly.dev`
+- **Production**: `http://103.164.99.2:1101/`
 - **Development (Local)**: `http://127.0.0.1:8000`
 
 ## Setup Environment Variables
@@ -20,12 +20,12 @@ VITE_API_URL=http://127.0.0.1:8000
 
 File `.env.local` tidak perlu dibuat, karena default sudah menggunakan production URL:
 ```env
-VITE_API_URL=https://backend-fastapi-system-factory.fly.dev
+VITE_API_URL=http://103.164.99.2:1101/
 ```
 
 Atau buat file `.env.production`:
 ```env
-VITE_API_URL=https://backend-fastapi-system-factory.fly.dev
+VITE_API_URL=http://103.164.99.2:1101/
 ```
 
 ## Cara Menggunakan
@@ -69,5 +69,13 @@ Setelah setup, test dengan:
 1. Buka browser console
 2. Cek network tab untuk memastikan request ke API URL yang benar
 3. Pastikan tidak ada CORS error
+
+
+
+
+
+
+
+
 
 

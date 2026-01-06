@@ -20,8 +20,8 @@ const fetchSuperadmins = async () => {
   error.value = null
   try {
     const res = await api.get('/workers')
-    // Filter hanya workers dengan department_id = 5 (Superadmin)
-    workers.value = res.data.filter(worker => worker.department_id === 5)
+    // Filter hanya workers dengan department.name = 5 (Superadmin)
+    workers.value = res.data.filter(worker => worker.department.name === 'Superadmin')
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data superadmin'
     console.error('Error fetching superadmins:', err)

@@ -20,8 +20,8 @@ const fetchSupervisors = async () => {
   error.value = null
   try {
     const res = await api.get('/workers')
-    // Filter hanya workers dengan department_id = 3 (Supervisor)
-    workers.value = res.data.filter(worker => worker.department_id === 3)
+    // Filter hanya workers dengan department.name = 3 (Supervisor)
+    workers.value = res.data.filter(worker => worker.department.name === 'Supervisor')
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data supervisor'
     console.error('Error fetching supervisors:', err)

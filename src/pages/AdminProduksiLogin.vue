@@ -20,8 +20,8 @@ const fetchAdminProduksi = async () => {
   error.value = null
   try {
     const res = await api.get('/workers')
-    // Filter hanya workers dengan department_id = 4 (Admin Produksi)
-    workers.value = res.data.filter(worker => worker.department_id === 4)
+    // Filter hanya workers dengan department.name = 4 (Admin Produksi)
+    workers.value = res.data.filter(worker => worker.department.name === 'Admin Produksi')
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data admin produksi'
     console.error('Error fetching admin produksi:', err)

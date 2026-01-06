@@ -11,12 +11,16 @@ import { modal } from '../plugins/modal'
 const router = useRouter()
 const supervisorSession = useSupervisorSessionStore()
 const logs = ref([])
+const targets = ref([])
+const attendances = ref([])
+const activeTab = ref('logs')
 const isLoading = ref(false)
 const error = ref(null)
 const selectedLog = ref(null)
 const showDetailModal = ref(false)
 
 // Filter states
+const logFilterMode = ref('approved_coordinator') // 'approved_coordinator', 'not_approved_coordinator', 'approved_supervisor'
 const filterWorkerId = ref('')
 const filterShiftId = ref('')
 const filterDate = ref('')
@@ -24,7 +28,6 @@ const filterPositionId = ref('')
 const filterSubPositionId = ref('')
 const filterSupplierId = ref('')
 const filterItemId = ref('')
-const filterApprovalCoordinator = ref('')
 const workers = ref([])
 const shifts = ref([])
 const positions = ref([])
@@ -73,33 +76,20 @@ const loadSubPositions = async () => {
   }
 }
 
-// Filter: default hanya tampilkan yang sudah di-approve coordinator dan belum di-approve supervisor
-// Tapi bisa diubah dengan filter tambahan
+// Filter logs based on mode and other criteria
 const filteredLogs = computed(() => {
-  // Default filter: hanya yang sudah di-approve coordinator dan belum di-approve supervisor
-  let filtered = logs.value.filter(log => 
-    log.approved_coordinator === true && 
-    (log.approved_spv === null || log.approved_spv === false)
-  )
+  let filtered = logs.value
 
-  // Jika filter approval coordinator diubah, tampilkan sesuai filter
-  if (filterApprovalCoordinator.value) {
-    if (filterApprovalCoordinator.value === 'all') {
-      // Tampilkan semua (termasuk yang belum di-approve coordinator)
-      filtered = logs.value.filter(log => 
-        log.approved_spv === null || log.approved_spv === false
-      )
-    } else if (filterApprovalCoordinator.value === 'approved') {
-      filtered = logs.value.filter(log => 
-        log.approved_coordinator === true && 
-        (log.approved_spv === null || log.approved_spv === false)
-      )
-    } else if (filterApprovalCoordinator.value === 'pending') {
-      filtered = logs.value.filter(log => 
-        log.approved_coordinator !== true && 
-        (log.approved_spv === null || log.approved_spv === false)
-      )
-    }
+  // Main filter based on selected mode
+  if (logFilterMode.value === 'approved_coordinator') {
+    // Menampilkan data yang status coordinatornya Approved (true)
+    filtered = filtered.filter(log => log.approved_coordinator === true)
+  } else if (logFilterMode.value === 'not_approved_coordinator') {
+    // Menampilkan data yang status coordinatornya bukan Approved (false)
+    filtered = filtered.filter(log => !log.approved_coordinator)
+  } else if (logFilterMode.value === 'approved_supervisor') {
+    // Menampilkan data yang status supervisornya Approved (true)
+    filtered = filtered.filter(log => log.approved_spv === true)
   }
 
   if (filterWorkerId.value) {
@@ -181,7 +171,6 @@ const clearFilters = () => {
   filterSubPositionId.value = ''
   filterSupplierId.value = ''
   filterItemId.value = ''
-  filterApprovalCoordinator.value = ''
   subPositions.value = []
 }
 
@@ -190,6 +179,96 @@ const handleLogout = async () => {
   if (confirmed) {
     supervisorSession.clearSession()
     router.push('/supervisor-login')
+  }
+}
+
+const fetchTargets = async () => {
+  isLoading.value = true
+  error.value = null
+  try {
+    const res = await api.get('/production-targets')
+    targets.value = res.data
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Gagal memuat data'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const handleEditTarget = (id) => {
+  router.push(`/production-targets/${id}/edit`)
+}
+
+const handleAddTarget = () => {
+  router.push('/production-targets/create')
+}
+
+const handleDeleteTarget = async (id) => {
+  const confirmed = await modal.confirm('Yakin ingin menghapus production target ini?')
+  if (!confirmed) return
+
+  try {
+    await api.delete(`/production-targets/${id}`)
+    await modal.showSuccess('Production target berhasil dihapus')
+    fetchTargets()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal menghapus production target')
+  }
+}
+
+const fetchAttendances = async () => {
+  isLoading.value = true
+  error.value = null
+  try {
+    const res = await api.get('/attendances')
+    attendances.value = res.data
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Gagal memuat data'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const handleAddAttendance = () => {
+  router.push('/attendances/create')
+}
+
+const handleEditAttendance = (record) => {
+  router.push(`/attendances/${record.id}/edit`)
+}
+
+const handleDeleteAttendance = async (id) => {
+  const confirmed = await modal.confirm('Yakin ingin menghapus attendance ini?')
+  if (!confirmed) return
+  try {
+    await api.delete(`/attendances/${id}`)
+    await modal.showSuccess('Attendance berhasil dihapus')
+    fetchAttendances()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal menghapus attendance')
+  }
+}
+
+const handleApproveAttendance = async (attendanceId) => {
+  const confirmed = await modal.confirm('Approve attendance ini sebagai supervisor?')
+  if (!confirmed) return
+  try {
+    await api.put(`/attendances/${attendanceId}`, { approved_supervisor: true })
+    await modal.showSuccess('Attendance berhasil di-approve supervisor')
+    fetchAttendances()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal approve attendance')
+  }
+}
+
+const setTab = async (tab) => {
+  activeTab.value = tab
+  if (tab === 'logs') {
+    if (logs.value.length === 0) await fetchData()
+  } else if (tab === 'targets') {
+    if (targets.value.length === 0) await fetchTargets()
+  } else if (tab === 'attendance') {
+    if (attendances.value.length === 0) await fetchAttendances()
   }
 }
 
@@ -221,8 +300,59 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div class="tab-buttons">
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'logs' }"
+        @click="setTab('logs')"
+        type="button"
+      >
+        Production Log
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'targets' }"
+        @click="setTab('targets')"
+        type="button"
+      >
+        Production Target
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'attendance' }"
+        @click="setTab('attendance')"
+        type="button"
+      >
+        Production Attendance
+      </button>
+    </div>
+
     <!-- Filters -->
-    <div class="filters-section">
+    <div v-if="activeTab === 'logs'" class="filters-section">
+      <div class="log-mode-buttons">
+        <button 
+          class="mode-btn"
+          :class="{ active: logFilterMode === 'approved_coordinator' }"
+          @click="logFilterMode = 'approved_coordinator'"
+        >
+          Approved Coordinator
+        </button>
+        <button 
+          class="mode-btn"
+          :class="{ active: logFilterMode === 'not_approved_coordinator' }"
+          @click="logFilterMode = 'not_approved_coordinator'"
+        >
+          Not Approved Coordinator
+        </button>
+        <button 
+          class="mode-btn"
+          :class="{ active: logFilterMode === 'approved_supervisor' }"
+          @click="logFilterMode = 'approved_supervisor'"
+        >
+          Approved Supervisor
+        </button>
+      </div>
+
       <h3>Filter</h3>
       <div class="filters-grid">
         <div class="filter-group">
@@ -286,16 +416,6 @@ onMounted(async () => {
         </div>
 
         <div class="filter-group">
-          <label>Status Approval Coordinator</label>
-          <select v-model="filterApprovalCoordinator" class="filter-input">
-            <option value="">Sudah Approve (Default)</option>
-            <option value="all">Semua Status</option>
-            <option value="approved">Sudah Approve</option>
-            <option value="pending">Belum Approve</option>
-          </select>
-        </div>
-
-        <div class="filter-group">
           <label>Tanggal</label>
           <input v-model="filterDate" type="date" class="filter-input" />
         </div>
@@ -306,18 +426,18 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="error" class="error-message">{{ error }}</div>
-    <div v-if="isLoading" class="loading">Memuat data...</div>
-    <div v-else-if="filteredLogs.length === 0" class="empty-state">
-      <p>Tidak ada data production logs</p>
-    </div>
-
-    <table v-else class="data-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Worker</th>
-          <th>Position</th>
+    <div v-if="activeTab === 'logs'">
+      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="isLoading" class="loading">Memuat data...</div>
+      <div v-else-if="filteredLogs.length === 0" class="empty-state">
+        <p>Tidak ada data production logs</p>
+      </div>
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Worker</th>
+            <th>Position</th>
           <th>Sub Position</th>
           <th>Item</th>
           <th>Output</th>
@@ -328,11 +448,11 @@ onMounted(async () => {
           <th>Status Coordinator</th>
           <th>Status Supervisor</th>
           <th>Aksi</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="log in filteredLogs" :key="log.id">
-          <td data-label="ID">{{ log.id }}</td>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="log in filteredLogs" :key="log.id">
+            <td data-label="ID">{{ log.id }}</td>
           <td data-label="Worker">{{ log.worker?.name || '-' }}</td>
           <td data-label="Position">{{ log.position?.code || '-' }}</td>
           <td data-label="Sub Position">{{ log.sub_position?.code || '-' }}</td>
@@ -364,6 +484,98 @@ onMounted(async () => {
         </tr>
       </tbody>
     </table>
+    </div>
+
+    <div v-else-if="activeTab === 'targets'">
+      <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+        <button class="btn-add" @click="handleAddTarget">
+          + Tambah Target
+        </button>
+      </div>
+      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="isLoading" class="loading">Memuat data...</div>
+      <div v-else-if="targets.length === 0" class="empty-state">
+        <p>Tidak ada data production target</p>
+      </div>
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Position</th>
+            <th>Sub Position</th>
+            <th>Target</th>
+            <th>Dibuat</th>
+            <th>Diperbarui</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="t in targets" :key="t.id">
+            <td data-label="ID">{{ t.id }}</td>
+            <td data-label="Position">{{ t.position?.code || '-' }}</td>
+            <td data-label="Sub Position">{{ t.sub_position?.code || '-' }}</td>
+            <td class="num" data-label="Target">{{ t.target }}</td>
+            <td data-label="Dibuat">{{ new Date(t.created_at).toLocaleString('id-ID') }}</td>
+            <td data-label="Diperbarui">{{ new Date(t.updated_at).toLocaleString('id-ID') }}</td>
+            <td class="actions" data-label="Aksi">
+              <button class="btn-edit" @click="handleEditTarget(t.id)">Edit</button>
+              <button class="btn-delete" @click="handleDeleteTarget(t.id)">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-else-if="activeTab === 'attendance'">
+      <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+        <button class="btn-add" @click="handleAddAttendance">
+          + Tambah Attendance
+        </button>
+      </div>
+      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="isLoading" class="loading">Memuat data...</div>
+      <div v-else-if="attendances.length === 0" class="empty-state">
+        <p>Tidak ada data attendance</p>
+      </div>
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Worker</th>
+            <th>Status</th>
+            <th>Tanggal</th>
+            <th>Waktu</th>
+            <th>Coordinator</th>
+            <th>Supervisor</th>
+            <th>Catatan</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="a in attendances" :key="a.id">
+            <td data-label="ID">{{ a.id }}</td>
+            <td data-label="Worker">{{ a.worker?.name || '-' }}</td>
+            <td data-label="Status">{{ a.status }}</td>
+            <td data-label="Tanggal">{{ new Date(a.date).toLocaleDateString('id-ID') }}</td>
+            <td data-label="Waktu">{{ a.time }}</td>
+            <td data-label="Coordinator">
+              <span v-if="a.approved_coordinator" class="badge approved">Approved</span>
+              <span v-else class="badge draft">Pending</span>
+            </td>
+            <td data-label="Supervisor">
+              <span v-if="a.approved_supervisor" class="badge approved">Approved</span>
+              <span v-else class="badge pending">Pending</span>
+            </td>
+            <td data-label="Catatan">{{ a.notes || '-' }}</td>
+            <td class="actions" data-label="Aksi">
+              <button class="btn-approve" v-if="!a.approved_supervisor" @click="handleApproveAttendance(a.id)">Approve</button>
+              <button class="btn-edit" @click="handleEditAttendance(a)">Edit</button>
+              <button class="btn-delete" @click="handleDeleteAttendance(a.id)">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- Detail Modal -->
@@ -549,6 +761,29 @@ onMounted(async () => {
   gap: 0.75rem;
 }
 
+.tab-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  padding: 0.5rem 1rem;
+  background: white;
+  color: #333b5f;
+  border: 2px solid #beceea;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab-btn.active,
+.tab-btn:hover {
+  border-color: #333b5f;
+  background: #f8f9fa;
+}
+
 .btn-logout {
   padding: 0.75rem 1.5rem;
   background: #dc3545;
@@ -726,9 +961,9 @@ onMounted(async () => {
   background: #218838;
 }
 
-.btn-edit {
+.btn-detail {
   padding: 0.5rem 1rem;
-  background: #333b5f;
+  background: #17a2b8;
   color: white;
   border: none;
   border-radius: 6px;
@@ -738,8 +973,59 @@ onMounted(async () => {
   transition: all 0.2s ease;
 }
 
+.btn-detail:hover {
+  background: #138496;
+}
+
+.btn-edit {
+  padding: 0.5rem 1rem;
+  background: #ffc107;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
 .btn-edit:hover {
-  background: #2a3250;
+  background: #e0a800;
+}
+
+.btn-delete {
+  padding: 0.5rem 1rem;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.btn-delete:hover {
+  background: #c82333;
+}
+
+.btn-add {
+  padding: 0.75rem 1.5rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.btn-add:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
 .loading, .empty-state {
@@ -882,7 +1168,9 @@ onMounted(async () => {
   }
 
   .btn-approve,
-  .btn-edit {
+  .btn-detail,
+  .btn-edit,
+  .btn-delete {
     width: 100%;
   }
 }
@@ -1185,6 +1473,36 @@ onMounted(async () => {
   .actions {
     flex-direction: column;
   }
+}
+
+.log-mode-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.mode-btn {
+  padding: 0.5rem 1rem;
+  background: white;
+  color: #333b5f;
+  border: 1px solid #beceea;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.mode-btn:hover {
+  background: #f8f9fa;
+  border-color: #333b5f;
+}
+
+.mode-btn.active {
+  background: #333b5f;
+  color: white;
+  border-color: #333b5f;
 }
 </style>
 

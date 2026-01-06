@@ -53,7 +53,7 @@ git push -u origin main
    - Klik "Show advanced" → "New variable"
    - Tambahkan:
      - **Key**: `VITE_API_URL`
-     - **Value**: URL backend API Anda (contoh: `https://backend-fastapi-system-factory.fly.dev`)
+     - **Value**: URL backend API Anda (contoh: `http://103.164.99.2:1101`)
    - Klik "Deploy site"
 
 5. **Tunggu Build Selesai**

@@ -20,10 +20,21 @@ const isLoading = ref(false)
 const isLoadingSubPositions = ref(false)
 
 const hasSubPositions = ref(false)
+const isDev = import.meta.env.DEV
 
-// Tampilkan hanya workers dengan department_id = 1 (operator)
+// Tampilkan hanya workers dengan department name = "Operator"
 const filteredWorkers = computed(() => {
-  return workers.value.filter(worker => worker.department_id === 1)
+  const filtered = workers.value.filter(worker => {
+    // Check berdasarkan department name (lebih reliable daripada ID)
+    if (worker.department && worker.department.name === 'Operator') {
+      return true
+    }
+    // Fallback: jika department object tidak ada, coba cari berdasarkan department_id
+    // Tapi ini tidak ideal karena ID bisa berbeda
+    return false
+  })
+  
+  return filtered
 })
 
 const goToProductionLogs = async () => {
@@ -62,7 +73,7 @@ watch(positionId, (newPositionId) => {
 
   const position = positions.value.find(p => p.id === newPositionId)
   if (position) {
-    // console.log('Position Selected - ID:', position.id, 'Code:', position.code)
+    // Logic tambahan jika diperlukan saat posisi berubah
   }
 })
 
@@ -76,11 +87,7 @@ onMounted(async () => {
 
     positions.value = posRes.data
     workers.value = workerRes.data
-
-    // Console log semua worker IDs
-    // console.log('All Worker IDs:', workers.value.map(w => w.id))
   } catch (error) {
-    console.error('Error loading data:', error)
     await modal.showError('Gagal memuat data. Silakan refresh halaman.')
   } finally {
     isLoading.value = false
@@ -101,7 +108,6 @@ const loadSubPositions = async () => {
     subPositions.value = res.data
     hasSubPositions.value = subPositions.value.length > 0
   } catch (error) {
-    console.error('Error loading sub positions:', error)
     await modal.showError('Gagal memuat sub posisi.')
   } finally {
     isLoadingSubPositions.value = false
@@ -229,6 +235,14 @@ const goBack = () => {
               {{ w.name }}
             </option>
           </select>
+          <!-- Debug info (development only) -->
+          <!-- <div v-if="!isLoading && isDev" style="margin-top: 0.5rem; padding: 0.5rem; background: #f0f0f0; border-radius: 4px; font-size: 0.75rem; color: #666;">
+            <strong>Debug:</strong> Total: {{ workers.length }}, 
+            Operator: {{ filteredWorkers.length }},
+            <span v-if="workers.length > 0">
+              Sample Dept: {{ workers[0]?.department?.name || 'N/A' }}
+            </span>
+          </div> -->
         </div>
 
 

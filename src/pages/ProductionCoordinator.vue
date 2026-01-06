@@ -11,6 +11,20 @@ import { modal } from '../plugins/modal'
 const router = useRouter()
 const coordinatorSession = useCoordinatorSessionStore()
 const logs = ref([])
+const targets = ref([])
+const attendances = ref([])
+const showAttendanceModal = ref(false)
+const attendanceForm = ref({
+  id: null,
+  worker_id: '',
+  status: 'HADIR',
+  date: '',
+  time: '',
+  notes: ''
+})
+const isAttendanceSubmitting = ref(false)
+const attendanceError = ref(null)
+const activeTab = ref('logs')
 const isLoading = ref(false)
 const error = ref(null)
 const selectedLog = ref(null)
@@ -175,6 +189,143 @@ const handleLogout = async () => {
   }
 }
 
+const fetchTargets = async () => {
+  isLoading.value = true
+  error.value = null
+  try {
+    const res = await api.get('/production-targets')
+    targets.value = res.data
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Gagal memuat data'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const handleEditTarget = (id) => {
+  router.push(`/production-targets/${id}/edit`)
+}
+
+const handleAddTarget = () => {
+  router.push('/production-targets/create')
+}
+
+const handleDeleteTarget = async (id) => {
+  const confirmed = await modal.confirm('Yakin ingin menghapus production target ini?')
+  if (!confirmed) return
+
+  try {
+    await api.delete(`/production-targets/${id}`)
+    await modal.showSuccess('Production target berhasil dihapus')
+    fetchTargets()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal menghapus production target')
+  }
+}
+
+const fetchAttendances = async () => {
+  isLoading.value = true
+  error.value = null
+  try {
+    const res = await api.get('/attendances')
+    attendances.value = res.data
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Gagal memuat data'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const openAttendanceModal = (record = null) => {
+  attendanceError.value = null
+  if (record) {
+    attendanceForm.value = {
+      id: record.id,
+      worker_id: record.worker?.id || '',
+      status: record.status || 'HADIR',
+      date: record.date ? record.date.substring(0, 10) : '',
+      time: record.time || '',
+      notes: record.notes || ''
+    }
+  } else {
+    attendanceForm.value = {
+      id: null,
+      worker_id: '',
+      status: 'HADIR',
+      date: '',
+      time: '',
+      notes: ''
+    }
+  }
+  showAttendanceModal.value = true
+}
+
+const closeAttendanceModal = () => {
+  showAttendanceModal.value = false
+}
+
+const handleAddAttendance = () => {
+  router.push('/attendances/create')
+}
+
+const handleEditAttendance = (record) => {
+  router.push(`/attendances/${record.id}/edit`)
+}
+
+const submitAttendance = async () => {
+  if (!attendanceForm.value.worker_id || !attendanceForm.value.status || !attendanceForm.value.date || !attendanceForm.value.time) {
+    attendanceError.value = 'Worker, Status, Tanggal, dan Waktu wajib diisi'
+    return
+  }
+  isAttendanceSubmitting.value = true
+  attendanceError.value = null
+  try {
+    const payload = {
+      worker_id: Number(attendanceForm.value.worker_id),
+      status: attendanceForm.value.status,
+      date: attendanceForm.value.date,
+      time: attendanceForm.value.time,
+      notes: attendanceForm.value.notes || null
+    }
+    if (attendanceForm.value.id) {
+      await api.put(`/attendances/${attendanceForm.value.id}`, payload)
+    } else {
+      payload.approved_coordinator = true
+      await api.post('/attendances/', payload)
+    }
+    await modal.showSuccess('Attendance berhasil disimpan')
+    showAttendanceModal.value = false
+    fetchAttendances()
+  } catch (err) {
+    attendanceError.value = err.response?.data?.detail || 'Gagal menyimpan attendance'
+  } finally {
+    isAttendanceSubmitting.value = false
+  }
+}
+
+const handleDeleteAttendance = async (id) => {
+  const confirmed = await modal.confirm('Yakin ingin menghapus attendance ini?')
+  if (!confirmed) return
+  try {
+    await api.delete(`/attendances/${id}`)
+    await modal.showSuccess('Attendance berhasil dihapus')
+    fetchAttendances()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal menghapus attendance')
+  }
+}
+
+const setTab = async (tab) => {
+  activeTab.value = tab
+  if (tab === 'logs') {
+    if (logs.value.length === 0) await fetchData()
+  } else if (tab === 'targets') {
+    if (targets.value.length === 0) await fetchTargets()
+  } else if (tab === 'attendance') {
+    if (attendances.value.length === 0) await fetchAttendances()
+  }
+}
+
 onMounted(async () => {
   // Check if coordinator is authenticated
   if (!coordinatorSession.isAuthenticated) {
@@ -190,7 +341,7 @@ onMounted(async () => {
   <div class="page-container">
     <div class="page-header">
       <div>
-        <h1>Production Logs - Coordinator</h1>
+        <h1>Production - Coordinator</h1>
         <p class="coordinator-name">Logged in as: {{ coordinatorSession.coordinatorName }}</p>
       </div>
       <div class="header-actions">
@@ -203,6 +354,34 @@ onMounted(async () => {
       </div>
     </div>
 
+    <div class="tab-buttons">
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'logs' }"
+        @click="setTab('logs')"
+        type="button"
+      >
+        Production Log
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'targets' }"
+        @click="setTab('targets')"
+        type="button"
+      >
+        Production Target
+      </button>
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'attendance' }"
+        @click="setTab('attendance')"
+        type="button"
+      >
+        Production Attendance
+      </button>
+    </div>
+
+    <div v-if="activeTab === 'logs'">
     <!-- Filters -->
     <div class="filters-section">
       <h3>Filter</h3>
@@ -340,6 +519,97 @@ onMounted(async () => {
         </tr>
       </tbody>
     </table>
+    </div>
+
+    <div v-else-if="activeTab === 'targets'">
+      <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+        <button class="btn-add" @click="handleAddTarget">
+          + Tambah Target
+        </button>
+      </div>
+      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="isLoading" class="loading">Memuat data...</div>
+      <div v-else-if="targets.length === 0" class="empty-state">
+        <p>Tidak ada data production target</p>
+      </div>
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Position</th>
+            <th>Sub Position</th>
+            <th>Target</th>
+            <th>Dibuat</th>
+            <th>Diperbarui</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="t in targets" :key="t.id">
+            <td data-label="ID">{{ t.id }}</td>
+            <td data-label="Position">{{ t.position?.code || '-' }}</td>
+            <td data-label="Sub Position">{{ t.sub_position?.code || '-' }}</td>
+            <td class="num" data-label="Target">{{ t.target }}</td>
+            <td data-label="Dibuat">{{ new Date(t.created_at).toLocaleString('id-ID') }}</td>
+            <td data-label="Diperbarui">{{ new Date(t.updated_at).toLocaleString('id-ID') }}</td>
+            <td class="actions" data-label="Aksi">
+              <button class="btn-edit" @click="handleEditTarget(t.id)">Edit</button>
+              <button class="btn-delete" @click="handleDeleteTarget(t.id)">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-else-if="activeTab === 'attendance'">
+      <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+        <button class="btn-add" @click="handleAddAttendance">
+          + Tambah Attendance
+        </button>
+      </div>
+      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="isLoading" class="loading">Memuat data...</div>
+      <div v-else-if="attendances.length === 0" class="empty-state">
+        <p>Tidak ada data attendance</p>
+      </div>
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Worker</th>
+            <th>Status</th>
+            <th>Tanggal</th>
+            <th>Waktu</th>
+            <th>Coordinator</th>
+            <th>Supervisor</th>
+            <th>Catatan</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="a in attendances" :key="a.id">
+            <td data-label="ID">{{ a.id }}</td>
+            <td data-label="Worker">{{ a.worker?.name || '-' }}</td>
+            <td data-label="Status">{{ a.status }}</td>
+            <td data-label="Tanggal">{{ new Date(a.date).toLocaleDateString('id-ID') }}</td>
+            <td data-label="Waktu">{{ a.time }}</td>
+            <td data-label="Coordinator">
+              <span v-if="a.approved_coordinator" class="badge approved">Approved</span>
+              <span v-else class="badge draft">Pending</span>
+            </td>
+            <td data-label="Supervisor">
+              <span v-if="a.approved_supervisor" class="badge approved">Approved</span>
+              <span v-else class="badge draft">Pending</span>
+            </td>
+            <td data-label="Catatan">{{ a.notes || '-' }}</td>
+            <td class="actions" data-label="Aksi">
+              <button class="btn-edit" @click="handleEditAttendance(a)">Edit</button>
+              <button class="btn-delete" @click="handleDeleteAttendance(a.id)">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- Detail Modal -->
@@ -490,6 +760,62 @@ onMounted(async () => {
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Attendance Modal -->
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="showAttendanceModal" class="modal-overlay" @click.self="closeAttendanceModal">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h2>{{ attendanceForm.id ? 'Edit Attendance' : 'Tambah Attendance' }}</h2>
+            <button class="modal-close" @click="closeAttendanceModal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="attendanceError" class="error-message">{{ attendanceError }}</div>
+            <div class="form-group">
+              <label>Worker</label>
+              <select v-model="attendanceForm.worker_id" class="filter-input">
+                <option value="" disabled>Pilih Worker</option>
+                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select v-model="attendanceForm.status" class="filter-input">
+                <option value="HADIR">HADIR</option>
+                <option value="IJIN">IJIN</option>
+                <option value="CUTI">CUTI</option>
+                <option value="ALPA">ALPA</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Tanggal</label>
+              <input type="date" v-model="attendanceForm.date" class="filter-input" />
+            </div>
+            <div class="form-group">
+              <label>Waktu</label>
+              <input type="time" v-model="attendanceForm.time" class="filter-input" />
+            </div>
+            <div class="form-group">
+              <label>Catatan</label>
+              <input type="text" v-model="attendanceForm.notes" class="filter-input" placeholder="Opsional" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-back" @click="closeAttendanceModal">Batal</button>
+            <button class="btn-approve" :disabled="isAttendanceSubmitting" @click="submitAttendance">
+              {{ isAttendanceSubmitting ? 'Menyimpan...' : 'Simpan' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -523,6 +849,29 @@ onMounted(async () => {
 .header-actions {
   display: flex;
   gap: 0.75rem;
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  padding: 0.5rem 1rem;
+  background: white;
+  color: #333b5f;
+  border: 2px solid #beceea;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab-btn.active,
+.tab-btn:hover {
+  border-color: #333b5f;
+  background: #f8f9fa;
 }
 
 .btn-logout {
@@ -695,12 +1044,13 @@ onMounted(async () => {
 
 .btn-approve:hover {
   background: #218838;
+  transform: translateY(-1px);
 }
 
 .btn-edit {
   padding: 0.5rem 1rem;
-  background: #333b5f;
-  color: white;
+  background: #ffc107;
+  color: #000;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -710,7 +1060,58 @@ onMounted(async () => {
 }
 
 .btn-edit:hover {
-  background: #2a3250;
+  background: #e0a800;
+  transform: translateY(-1px);
+}
+
+.btn-delete {
+  padding: 0.5rem 1rem;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.btn-delete:hover {
+  background: #c82333;
+  transform: translateY(-1px);
+}
+
+.btn-approve,
+.btn-detail,
+.btn-edit,
+.btn-delete {
+  margin-right: 0.5rem;
+}
+
+.btn-approve:last-child,
+.btn-detail:last-child,
+.btn-edit:last-child,
+.btn-delete:last-child {
+  margin-right: 0;
+}
+
+.btn-add {
+  padding: 0.75rem 1.5rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.btn-add:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
 .loading, .empty-state {

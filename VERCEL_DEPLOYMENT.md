@@ -56,7 +56,7 @@ git push -u origin main
    - Klik "Environment Variables"
    - Tambahkan:
      - **Key**: `VITE_API_URL`
-     - **Value**: URL backend API Anda (contoh: `https://backend-fastapi-system-factory.fly.dev`)
+     - **Value**: URL backend API Anda (contoh: `http://103.164.99.2:1101`)
      - **Environment**: Production, Preview, Development (pilih sesuai kebutuhan)
    - Klik "Deploy"
 

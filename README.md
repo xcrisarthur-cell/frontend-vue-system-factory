@@ -21,20 +21,36 @@ npm install
 ## 🛠️ Development
 
 ```bash
-# Run development server
+# Run development server (menggunakan .env saat ini)
 npm run dev
+
+# Run dengan local API (auto-switch ke local)
+npm run dev:local
+
+# Run dengan production API (auto-switch ke production)
+npm run dev:prod
 ```
 
 Aplikasi akan berjalan di `http://localhost:5173`
 
+**💡 Tip:** Gunakan `npm run dev:local` untuk development dengan backend lokal, atau `npm run dev:prod` untuk testing dengan production API.
+
 ## 🏗️ Build untuk Production
 
 ```bash
-# Build untuk production
+# Build untuk production (menggunakan .env saat ini)
 npm run build
+
+# Build dengan local API
+npm run build:local
+
+# Build dengan production API (recommended untuk deploy)
+npm run build:prod
 ```
 
 Build output akan berada di folder `dist/`
+
+**💡 Tip:** Sebelum build untuk production, pastikan sudah switch ke production environment: `npm run env:prod`
 
 ## 📤 Deploy ke Netlify
 
@@ -77,12 +93,45 @@ Build output akan berada di folder `dist/`
 
 ### Environment Variables
 
-Buat file `.env` untuk development:
-```env
-VITE_API_URL=https://your-api-url.com
+#### Quick Setup
+
+```bash
+# Switch ke local environment
+npm run env:local
+
+# Switch ke production environment
+npm run env:prod
+
+# Check environment saat ini
+npm run env:check
 ```
 
-Untuk production, set environment variables di Netlify dashboard.
+#### Manual Setup
+
+Buat file `.env` di root folder:
+```env
+# Untuk local development
+VITE_API_URL=http://127.0.0.1:8000
+VITE_ENV=local
+
+# Untuk production
+VITE_API_URL=http://103.164.99.2:1101
+VITE_ENV=production
+```
+
+**📖 Lihat [ENVIRONMENT_SETUP.md](./ENVIRONMENT_SETUP.md) untuk panduan lengkap.**
+
+#### Environment Variables
+
+| Variable | Deskripsi | Local | Production |
+|----------|-----------|-------|------------|
+| `VITE_API_URL` | URL API backend | `http://127.0.0.1:8000` | `http://103.164.99.2:1101` |
+| `VITE_ENV` | Environment identifier | `local` | `production` |
+
+**Catatan:**
+- File `.env` sudah di-ignore oleh git
+- Setelah mengubah `.env`, restart dev server
+- Untuk production, set environment variables di Netlify dashboard
 
 ### File Konfigurasi
 

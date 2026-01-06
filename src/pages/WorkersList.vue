@@ -12,6 +12,7 @@ const positions = ref([])
 const departments = ref([])
 const isLoading = ref(false)
 const error = ref(null)
+const isDev = import.meta.env.DEV
 
 const fetchData = async () => {
   isLoading.value = true
@@ -22,12 +23,13 @@ const fetchData = async () => {
       positionsApi.getAll(),
       departmentsApi.getAll()
     ])
-    workers.value = workerRes.data
-    positions.value = posRes.data
-    departments.value = deptRes.data
+    
+    // Handle response - axios wraps response in .data
+    workers.value = Array.isArray(workerRes.data) ? workerRes.data : (workerRes.data?.data || [])
+    positions.value = Array.isArray(posRes.data) ? posRes.data : (posRes.data?.data || [])
+    departments.value = Array.isArray(deptRes.data) ? deptRes.data : (deptRes.data?.data || [])
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data'
-    console.error('Error fetching data:', err)
   } finally {
     isLoading.value = false
   }
@@ -98,9 +100,27 @@ onMounted(() => {
 
     <div v-if="error" class="error-message">{{ error }}</div>
     <div v-if="isLoading" class="loading">Memuat data...</div>
-    <div v-else-if="workers.length === 0" class="empty-state"><p>Tidak ada data workers</p></div>
+    
+    <!-- Debug info (development only) -->
+    <div v-if="!isLoading && isDev" style="padding: 1rem; background: #f0f0f0; margin-bottom: 1rem; border-radius: 8px; font-size: 0.875rem;">
+      <strong>Debug Info:</strong><br>
+      Workers Count: {{ workers.length }}<br>
+      Workers Type: {{ Array.isArray(workers) ? 'Array' : typeof workers }}<br>
+      <span v-if="workers.length > 0">
+        First Worker ID: {{ workers[0]?.id }}<br>
+        First Worker Name: {{ workers[0]?.name }}
+      </span>
+      <span v-else>No workers data</span>
+    </div>
+    
+    <div v-else-if="!isLoading && workers.length === 0" class="empty-state">
+      <p>Tidak ada data workers</p>
+      <p style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;">
+        Pastikan backend API running dan environment sudah benar.
+      </p>
+    </div>
 
-    <table v-else class="data-table">
+    <table v-else-if="!isLoading && workers.length > 0" class="data-table">
       <thead>
         <tr>
           <th>ID</th>

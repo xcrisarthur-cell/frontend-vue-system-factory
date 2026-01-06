@@ -16,18 +16,20 @@ const navigateTo = (path) => {
         <div class="logo-container">
           <img src="/logo-massindo.png" alt="Logo Massindo" class="logo-image" />
         </div>
-        <h1>Massindo Karya Prima Operasional</h1>
+        <h1 class="app-name">MATRIX</h1>
+        <p class="app-desc">Manufacturing, Reporting & Integrated Execution System</p>
         <p class="subtitle">Pilih modul yang ingin Anda akses</p>
+
       </div>
-      
+
       <div class="menu-grid">
-        <button 
-          class="menu-item"
-          @click="navigateTo('/production-menu')"
-        >
+        <button class="menu-item" @click="navigateTo('/production-menu')">
           <div class="menu-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M20 7h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2z"></path>
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path
+                d="M20 7h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2z">
+              </path>
             </svg>
           </div>
           <div class="menu-content">
@@ -35,18 +37,17 @@ const navigateTo = (path) => {
             <p>Input data</p>
           </div>
           <div class="menu-arrow">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
           </div>
         </button>
-        
-        <button 
-          class="menu-item"
-          @click="navigateTo('/master-data-login')"
-        >
+
+        <button class="menu-item" @click="navigateTo('/master-data-login')">
           <div class="menu-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
               <polyline points="14 2 14 8 20 8"></polyline>
               <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -59,7 +60,8 @@ const navigateTo = (path) => {
             <p>Kelola data master</p>
           </div>
           <div class="menu-arrow">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"></polyline>
             </svg>
           </div>
@@ -70,7 +72,40 @@ const navigateTo = (path) => {
 </template>
 
 <style scoped>
-    
+.app-name {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 800;
+  color: #333b5f;
+  letter-spacing: 0.2em;
+}
+
+.app-desc {
+  margin: 0.5rem 0 0.75rem 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #333b5f;
+  opacity: 0.65;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-desc::after {
+  content: '';
+  display: block;
+  width: 48px;
+  height: 2px;
+  background: #333b5f;
+  margin: 1rem auto 0;
+  opacity: 0.3;
+}
+
+.subtitle {
+  margin-top: 1.25rem;
+  font-size: 0.95rem;
+  opacity: 0.6;
+}
+
 .home-container {
   min-height: 100vh;
   display: flex;
@@ -96,6 +131,7 @@ const navigateTo = (path) => {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -247,34 +283,34 @@ const navigateTo = (path) => {
   .home-container {
     padding: 1rem 0.75rem;
   }
-  
+
   .home-card {
     padding: 2rem 1.75rem;
     border-radius: 20px;
   }
-  
+
   .home-header h1 {
     font-size: 2rem;
   }
-  
+
   .subtitle {
     font-size: 0.95rem;
   }
-  
+
   .menu-grid {
     grid-template-columns: 1fr;
     gap: 1.25rem;
   }
-  
+
   .menu-item {
     padding: 1.25rem;
   }
-  
+
   .menu-icon {
     width: 48px;
     height: 48px;
   }
-  
+
   .menu-content h3 {
     font-size: 1.1rem;
   }
@@ -284,39 +320,39 @@ const navigateTo = (path) => {
   .home-container {
     padding: 0.75rem 0.5rem;
   }
-  
+
   .home-card {
     padding: 1.75rem 1.5rem;
     border-radius: 16px;
   }
-  
+
   .home-header {
     margin-bottom: 2rem;
   }
-  
+
   .home-header h1 {
     font-size: 1.75rem;
     margin-bottom: 0.5rem;
   }
-  
+
   .subtitle {
     font-size: 0.875rem;
   }
-  
+
   .menu-item {
     padding: 1rem;
     gap: 0.875rem;
   }
-  
+
   .menu-icon {
     width: 44px;
     height: 44px;
   }
-  
+
   .menu-content h3 {
     font-size: 1rem;
   }
-  
+
   .menu-content p {
     font-size: 0.8125rem;
   }
@@ -328,7 +364,7 @@ const navigateTo = (path) => {
     max-width: 850px;
     padding: 2.5rem;
   }
-  
+
   .menu-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -341,4 +377,3 @@ const navigateTo = (path) => {
   }
 }
 </style>
-

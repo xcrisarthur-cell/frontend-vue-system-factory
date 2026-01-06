@@ -16,6 +16,8 @@ const isLoading = ref(false)
 const error = ref(null)
 const selectedLog = ref(null)
 const showDetailModal = ref(false)
+const selectedLogIds = ref([])
+const activeTab = ref('not_completion')
 
 // Filter states
 const filterWorkerId = ref('')
@@ -129,6 +131,49 @@ const filteredLogs = computed(() => {
   return filtered
 })
 
+const pendingCompletionLogs = computed(() => {
+  return filteredLogs.value.filter(log => !log.status_completion || log.status_completion === 0)
+})
+
+const completedCompletionLogs = computed(() => {
+  return filteredLogs.value.filter(log => log.status_completion && log.status_completion > 0)
+})
+
+const isAllPendingSelected = computed(() => {
+  if (pendingCompletionLogs.value.length === 0) return false
+  return pendingCompletionLogs.value.every(log => selectedLogIds.value.includes(log.id))
+})
+
+const isAllCompletedSelected = computed(() => {
+  if (completedCompletionLogs.value.length === 0) return false
+  return completedCompletionLogs.value.every(log => selectedLogIds.value.includes(log.id))
+})
+
+const toggleSelectPending = () => {
+  const pendingIds = pendingCompletionLogs.value.map(log => log.id)
+  if (isAllPendingSelected.value) {
+    selectedLogIds.value = selectedLogIds.value.filter(id => !pendingIds.includes(id))
+  } else {
+    selectedLogIds.value = [...new Set([...selectedLogIds.value, ...pendingIds])]
+  }
+}
+
+const toggleSelectCompleted = () => {
+  const completedIds = completedCompletionLogs.value.map(log => log.id)
+  if (isAllCompletedSelected.value) {
+    selectedLogIds.value = selectedLogIds.value.filter(id => !completedIds.includes(id))
+  } else {
+    selectedLogIds.value = [...new Set([...selectedLogIds.value, ...completedIds])]
+  }
+}
+
+const formatStatusCompletion = (status) => {
+  const val = status || 0
+  if (val === 0) return 'Belum'
+  if (val === 1) return 'Sudah'
+  return `${val}x Tarik Data`
+}
+
 const handleEdit = (id) => {
   router.push(`/production-logs/${id}/edit?from=admin-produksi`)
 }
@@ -179,20 +224,26 @@ const handleLogout = async () => {
 
 const downloadExcel = async () => {
   try {
+    if (selectedLogIds.value.length === 0) {
+      await modal.showWarning('Silakan pilih data yang ingin diunduh (checklist) terlebih dahulu')
+      return
+    }
+
     isLoading.value = true
     
-    // Fetch all production logs (not filtered)
+    // Update status in backend
+    await productionLogsApi.bulkIncrementStatus(selectedLogIds.value)
+
+    // Fetch fresh logs to get updated status
     const logsRes = await productionLogsApi.getAll()
     const allLogs = logsRes.data
     
-    if (!allLogs || allLogs.length === 0) {
-      await modal.showWarning('Tidak ada data production log untuk diunduh')
-      return
-    }
+    const logsToDownload = allLogs.filter(log => selectedLogIds.value.includes(log.id))
     
     // Prepare data for Excel
-    const excelData = allLogs.map(log => ({
+    const excelData = logsToDownload.map(log => ({
       'ID': log.id,
+      'Status Completion': log.status_completion || 0,
       'Tanggal Dibuat': new Date(log.created_at).toLocaleString('id-ID'),
       'Worker': log.worker?.name || '-',
       'Position': log.position?.code || '-',
@@ -234,10 +285,17 @@ const downloadExcel = async () => {
     // Write and download
     XLSX.writeFile(workbook, filename)
     
-    await modal.showSuccess(`Data berhasil diunduh: ${filename}`)
+    await modal.showSuccess(`Data berhasil diunduh dan status diperbarui`)
+    
+    // Clear selection
+    selectedLogIds.value = []
+    
+    // Update local state with fresh data
+    logs.value = allLogs
+    
   } catch (err) {
     console.error('Error downloading Excel:', err)
-    await modal.showError('Gagal mengunduh data Excel. Silakan coba lagi.')
+    await modal.showError('Gagal memproses data. Silakan coba lagi.')
   } finally {
     isLoading.value = false
   }
@@ -262,7 +320,7 @@ onMounted(async () => {
         <p class="admin-name">Logged in as: {{ adminProduksiSession.adminProduksiName }}</p>
       </div>
       <div class="header-actions">
-        <button class="btn-download" @click="downloadExcel" :disabled="isLoading">
+        <button class="btn-download" @click="downloadExcel" :disabled="isLoading || selectedLogIds.length === 0" :class="{ 'disabled': selectedLogIds.length === 0 }">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
@@ -378,53 +436,168 @@ onMounted(async () => {
       <p>Tidak ada data production logs</p>
     </div>
 
-    <table v-else class="data-table">
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Worker</th>
-          <th>Position</th>
-          <th>Sub Position</th>
-          <th>Item</th>
-          <th>Output</th>
-          <th>Reject</th>
-          <th>Shift</th>
-          <th>Supplier</th>
-          <th>Tanggal</th>
-          <th>Status Coordinator</th>
-          <th>Status Supervisor</th>
-          <th>Aksi</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="log in filteredLogs" :key="log.id">
-          <td data-label="ID">{{ log.id }}</td>
-          <td data-label="Worker">{{ log.worker?.name || '-' }}</td>
-          <td data-label="Position">{{ log.position?.code || '-' }}</td>
-          <td data-label="Sub Position">{{ log.sub_position?.code || '-' }}</td>
-          <td data-label="Item">{{ log.item?.item_name || log.item?.item_number || '-' }}</td>
-          <td class="num" data-label="Output">{{ log.qty_output }}</td>
-          <td class="num reject" data-label="Reject">{{ log.qty_reject }}</td>
-          <td data-label="Shift">{{ log.shift?.name || '-' }}</td>
-          <td data-label="Supplier">{{ log.supplier?.name || '-' }}</td>
-          <td data-label="Tanggal">{{ new Date(log.created_at).toLocaleString('id-ID') }}</td>
-          <td data-label="Status Coordinator">
-            <span v-if="log.approved_coordinator" class="badge approved">Approved</span>
-            <span v-else class="badge draft">Pending</span>
-          </td>
-          <td data-label="Status Supervisor">
-            <span v-if="log.approved_spv" class="badge approved">Approved</span>
-            <span v-else-if="log.approved_coordinator" class="badge pending">Pending</span>
-            <span v-else class="badge draft">Belum</span>
-          </td>
-          <td class="actions" data-label="Aksi">
-            <button class="btn-detail" @click="handleShowDetail(log)">Detail Data</button>
-            <button class="btn-edit" @click="handleEdit(log.id)">Edit</button>
-            <button class="btn-delete" @click="handleDelete(log.id)">Hapus</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div v-else class="tables-container">
+      <div class="tabs-header" style="margin-bottom: 20px; display: flex; gap: 10px;">
+        <button 
+          @click="activeTab = 'not_completion'"
+          :class="['tab-btn', { active: activeTab === 'not_completion' }]"
+        >
+          Not Completion
+        </button>
+        <button 
+          @click="activeTab = 'done_completion'"
+          :class="['tab-btn', { active: activeTab === 'done_completion' }]"
+        >
+          Done Completion
+        </button>
+      </div>
+
+      <!-- Table 1: Pending Logs -->
+      <div class="table-section" v-if="activeTab === 'not_completion'">
+        <h3>Data Belum Ditarik</h3>
+        <div v-if="pendingCompletionLogs.length === 0" class="empty-state-small" style="padding: 20px; text-align: center; background: #f9fafb; border-radius: 8px; margin-bottom: 20px;">
+          <p>Tidak ada data belum ditarik</p>
+        </div>
+        <table v-else class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;">
+                <input 
+                  type="checkbox" 
+                  :checked="isAllPendingSelected" 
+                  @change="toggleSelectPending"
+                />
+              </th>
+              <th>ID</th>
+              <th>Worker</th>
+              <th>Position</th>
+              <th>Sub Position</th>
+              <th>Item</th>
+              <th>Output</th>
+              <th>Reject</th>
+              <th>Shift</th>
+              <th>Supplier</th>
+              <th>Tanggal</th>
+              <th>Status Completion</th>
+              <th>Status Coordinator</th>
+              <th>Status Supervisor</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="log in pendingCompletionLogs" :key="log.id">
+              <td style="text-align: center;">
+                <input 
+                  type="checkbox" 
+                  :value="log.id" 
+                  v-model="selectedLogIds" 
+                />
+              </td>
+              <td data-label="ID">{{ log.id }}</td>
+              <td data-label="Worker">{{ log.worker?.name || '-' }}</td>
+              <td data-label="Position">{{ log.position?.code || '-' }}</td>
+              <td data-label="Sub Position">{{ log.sub_position?.code || '-' }}</td>
+              <td data-label="Item">{{ log.item?.item_name || log.item?.item_number || '-' }}</td>
+              <td class="num" data-label="Output">{{ log.qty_output }}</td>
+              <td class="num reject" data-label="Reject">{{ log.qty_reject }}</td>
+              <td data-label="Shift">{{ log.shift?.name || '-' }}</td>
+              <td data-label="Supplier">{{ log.supplier?.name || '-' }}</td>
+              <td data-label="Tanggal">{{ new Date(log.created_at).toLocaleString('id-ID') }}</td>
+              <td data-label="Status Completion" style="text-align: center;">
+                <span class="badge" style="background-color: #f3f4f6; color: #374151;">{{ formatStatusCompletion(log.status_completion) }}</span>
+              </td>
+              <td data-label="Status Coordinator">
+                <span v-if="log.approved_coordinator" class="badge approved">Approved</span>
+                <span v-else class="badge draft">Pending</span>
+              </td>
+              <td data-label="Status Supervisor">
+                <span v-if="log.approved_spv" class="badge approved">Approved</span>
+                <span v-else-if="log.approved_coordinator" class="badge pending">Pending</span>
+                <span v-else class="badge draft">Belum</span>
+              </td>
+              <td class="actions" data-label="Aksi">
+                <button class="btn-detail" @click="handleShowDetail(log)">Detail Data</button>
+                <button class="btn-edit" @click="handleEdit(log.id)">Edit</button>
+                <button class="btn-delete" @click="handleDelete(log.id)">Hapus</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table 2: Completed Logs -->
+      <div class="table-section" v-if="activeTab === 'done_completion'">
+        <h3>Riwayat Tarik Data</h3>
+        <div v-if="completedCompletionLogs.length === 0" class="empty-state-small" style="padding: 20px; text-align: center; background: #f9fafb; border-radius: 8px;">
+          <p>Tidak ada riwayat tarik data</p>
+        </div>
+        <table v-else class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;">
+                <input 
+                  type="checkbox" 
+                  :checked="isAllCompletedSelected" 
+                  @change="toggleSelectCompleted"
+                />
+              </th>
+              <th>ID</th>
+              <th>Worker</th>
+              <th>Position</th>
+              <th>Sub Position</th>
+              <th>Item</th>
+              <th>Output</th>
+              <th>Reject</th>
+              <th>Shift</th>
+              <th>Supplier</th>
+              <th>Tanggal</th>
+              <th>Status Completion</th>
+              <th>Status Coordinator</th>
+              <th>Status Supervisor</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="log in completedCompletionLogs" :key="log.id">
+              <td style="text-align: center;">
+                <input 
+                  type="checkbox" 
+                  :value="log.id" 
+                  v-model="selectedLogIds" 
+                />
+              </td>
+              <td data-label="ID">{{ log.id }}</td>
+              <td data-label="Worker">{{ log.worker?.name || '-' }}</td>
+              <td data-label="Position">{{ log.position?.code || '-' }}</td>
+              <td data-label="Sub Position">{{ log.sub_position?.code || '-' }}</td>
+              <td data-label="Item">{{ log.item?.item_name || log.item?.item_number || '-' }}</td>
+              <td class="num" data-label="Output">{{ log.qty_output }}</td>
+              <td class="num reject" data-label="Reject">{{ log.qty_reject }}</td>
+              <td data-label="Shift">{{ log.shift?.name || '-' }}</td>
+              <td data-label="Supplier">{{ log.supplier?.name || '-' }}</td>
+              <td data-label="Tanggal">{{ new Date(log.created_at).toLocaleString('id-ID') }}</td>
+              <td data-label="Status Completion" style="text-align: center;">
+                <span class="badge" style="background-color: #d1fae5; color: #065f46;">{{ formatStatusCompletion(log.status_completion) }}</span>
+              </td>
+              <td data-label="Status Coordinator">
+                <span v-if="log.approved_coordinator" class="badge approved">Approved</span>
+                <span v-else class="badge draft">Pending</span>
+              </td>
+              <td data-label="Status Supervisor">
+                <span v-if="log.approved_spv" class="badge approved">Approved</span>
+                <span v-else-if="log.approved_coordinator" class="badge pending">Pending</span>
+                <span v-else class="badge draft">Belum</span>
+              </td>
+              <td class="actions" data-label="Aksi">
+                <button class="btn-detail" @click="handleShowDetail(log)">Detail Data</button>
+                <button class="btn-edit" @click="handleEdit(log.id)">Edit</button>
+                <button class="btn-delete" @click="handleDelete(log.id)">Hapus</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- Detail Modal -->
@@ -578,6 +751,22 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.tab-btn {
+  padding: 10px 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.tab-btn.active {
+  background-color: #3b82f6 !important;
+  color: white !important;
+  border-color: #3b82f6 !important;
+}
+
 .page-container {
   padding: 2rem;
   max-width: 1400px;
@@ -623,6 +812,23 @@ onMounted(async () => {
 
 .btn-logout:hover {
   background: #c82333;
+}
+
+.tab-btn {
+  padding: 10px 20px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  color: #374151;
+}
+
+.tab-btn.active {
+  background-color: #333b5f !important;
+  color: white !important;
+  border-color: #333b5f !important;
 }
 
 .btn-download {

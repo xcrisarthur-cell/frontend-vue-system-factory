@@ -20,8 +20,8 @@ const fetchCoordinators = async () => {
   error.value = null
   try {
     const res = await api.get('/workers')
-    // Filter hanya workers dengan department_id = 2 (Koordinator)
-    workers.value = res.data.filter(worker => worker.department_id === 2)
+    // Filter hanya workers dengan department.name = 2 (Koordinator)
+    workers.value = res.data.filter(worker => worker.department.name === 'Koordinator')
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data coordinator'
     console.error('Error fetching coordinators:', err)

@@ -12,6 +12,7 @@ const router = useRouter()
 const shifts = ref([])
 const suppliers = ref([])
 const comments = ref([])
+const productionTargets = ref([])
 
 const shiftId = ref('')
 const supplierId = ref('')
@@ -28,6 +29,15 @@ const problemMinutes = ref('')
 const isSubmitting = ref(false)
 const isLoading = ref(false)
 
+// Error states untuk validasi
+const errors = ref({
+  shiftId: '',
+  supplierId: '',
+  itemNumber: '',
+  qtyOutput: '',
+  qtyReject: ''
+})
+
 /* ===== guard: session wajib ada ===== */
 onMounted(async () => {
   if (!session.workerId || !session.positionId) {
@@ -39,15 +49,17 @@ onMounted(async () => {
   isLoading.value = true
 
   try {
-    const [shiftRes, supplierRes, commentRes] = await Promise.all([
+    const [shiftRes, supplierRes, commentRes, targetRes] = await Promise.all([
       api.get('/shifts'),
       api.get('/suppliers'),
-      api.get('/problem-comments')
+      api.get('/problem-comments'),
+      api.get('/production-targets')
     ])
 
     shifts.value = shiftRes.data
     suppliers.value = supplierRes.data
     comments.value = commentRes.data
+    productionTargets.value = targetRes.data
     
   } catch (error) {
     console.error('Error loading data:', error)
@@ -60,6 +72,17 @@ onMounted(async () => {
 /* ===== unit otomatis (pcs / lmbr) ===== */
 const unitLabel = computed(() => {
   return session.positionUnit || ''
+})
+
+// Target produksi yang cocok dengan posisi/sub posisi saat ini
+const currentTarget = computed(() => {
+  const posId = session.positionId
+  const subId = session.subPositionId || null
+  if (!posId || productionTargets.value.length === 0) return null
+  const exact = productionTargets.value.find(t => t.position_id === posId && t.sub_position_id === subId)
+  if (exact) return exact
+  const byPositionOnly = productionTargets.value.find(t => t.position_id === posId && (t.sub_position_id === null || t.sub_position_id === undefined))
+  return byPositionOnly || null
 })
 
 /* ===== ambil item detail ===== */
@@ -81,6 +104,57 @@ const loadItem = async () => {
   }
 }
 
+// Validasi form dengan error messages
+const validateForm = () => {
+  // Reset errors
+  errors.value = {
+    shiftId: '',
+    supplierId: '',
+    itemNumber: '',
+    qtyOutput: '',
+    qtyReject: ''
+  }
+
+  const missingFields = []
+
+  // Validasi Shift
+  if (!shiftId.value) {
+    errors.value.shiftId = 'Shift wajib dipilih'
+    missingFields.push('Shift')
+  }
+
+  // Validasi Supplier
+  if (!supplierId.value) {
+    errors.value.supplierId = 'Supplier wajib dipilih'
+    missingFields.push('Supplier')
+  }
+
+  // Validasi Item Number
+  if (!itemNumber.value || !itemDetail.value) {
+    errors.value.itemNumber = 'Item Number wajib diisi dan valid'
+    missingFields.push('Item Number')
+  }
+
+  // Validasi Qty Output
+  if (qtyOutput.value === '' || Number.isNaN(Number(qtyOutput.value))) {
+    errors.value.qtyOutput = 'Qty Output wajib diisi'
+    missingFields.push('Qty Output')
+  }
+
+  // Validasi Qty Reject
+  if (qtyReject.value === '' || Number.isNaN(Number(qtyReject.value))) {
+    errors.value.qtyReject = 'Qty Reject wajib diisi'
+    missingFields.push('Qty Reject')
+  }
+
+  // Jika ada field yang kosong, tampilkan error
+  if (missingFields.length > 0) {
+    return false
+  }
+
+  return true
+}
+
 const validateBusinessRules = async () => {
   const output = Number(qtyOutput.value || 0)
   const reject = Number(qtyReject.value || 0)
@@ -97,6 +171,7 @@ const validateBusinessRules = async () => {
     return false
   }
 
+  // Kendala produksi tidak wajib, tapi jika ada kendala maka durasi wajib diisi
   if (hasComments && duration <= 0) {
     await modal.showWarning('Durasi kendala wajib diisi jika ada kendala')
     return false
@@ -112,8 +187,16 @@ const validateBusinessRules = async () => {
 
 /* ===== submit production log ===== */
 const submit = async () => {
-  if (!shiftId.value || !itemDetail.value) {
-    await modal.showWarning('Shift dan item wajib diisi')
+  // Validasi form terlebih dahulu
+  if (!validateForm()) {
+    const missingFields = []
+    if (errors.value.shiftId) missingFields.push('Shift')
+    if (errors.value.supplierId) missingFields.push('Supplier')
+    if (errors.value.itemNumber) missingFields.push('Item Number')
+    if (errors.value.qtyOutput) missingFields.push('Qty Output')
+    if (errors.value.qtyReject) missingFields.push('Qty Reject')
+    
+    await modal.showError(`Kolom berikut wajib diisi: ${missingFields.join(', ')}`)
     return
   }
 
@@ -126,7 +209,7 @@ const submit = async () => {
     
     if (manualComment.value.trim()) {
       try {
-        const newCommentRes = await api.post('/problem-comments', {
+        const newCommentRes = await api.post('/problem-comments/', {
           description: manualComment.value.trim()
         })
         finalCommentIds.push(newCommentRes.data.id)
@@ -158,22 +241,35 @@ const submit = async () => {
       position_id: session.positionId,
       sub_position_id: session.subPositionId || null,
       shift_id: shiftId.value,
-      supplier_id: supplierId.value || null,
+      supplier_id: supplierId.value, // Supplier sekarang wajib, tidak bisa null
       item_id: itemDetail.value.id,
       qty_output: Number(qtyOutput.value || 0),
       qty_reject: Number(qtyReject.value || 0),
       problem_comment_ids: finalCommentIds.length > 0 ? finalCommentIds : null,
-      problem_duration_minutes: Number(problemMinutes.value || 0)
+      problem_duration_minutes: Number(problemMinutes.value || 0) || null
     })
 
     await modal.showSuccess('Data produksi berhasil disimpan')
 
     // Reset form
+    shiftId.value = ''
+    supplierId.value = ''
+    itemNumber.value = ''
+    itemDetail.value = null
     qtyOutput.value = ''
     qtyReject.value = ''
     selectedCommentIds.value = []
     manualComment.value = ''
     problemMinutes.value = ''
+    
+    // Reset errors
+    errors.value = {
+      shiftId: '',
+      supplierId: '',
+      itemNumber: '',
+      qtyOutput: '',
+      qtyReject: ''
+    }
   } catch (error) {
     console.error('Error submitting:', error)
     await modal.showError('Gagal menyimpan data. Silakan coba lagi.')
@@ -242,6 +338,13 @@ const logout = async () => {
             <span class="info-label">Unit:</span>
             <span class="info-value">{{ session.positionUnit }}</span>
           </div>
+          <div class="info-item">
+            <span class="info-label">Target:</span>
+            <span class="info-value">
+              <template v-if="currentTarget">{{ currentTarget.target }} {{ unitLabel }}</template>
+              <template v-else>-</template>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -253,39 +356,60 @@ const logout = async () => {
 
           <div class="form-row">
             <div class="form-group">
-              <label for="shift">Shift</label>
-              <select id="shift" v-model="shiftId" :disabled="isLoading" class="form-select" required>
+              <label for="shift">
+                Shift <span class="required-star">*</span>
+              </label>
+              <select 
+                id="shift" 
+                v-model="shiftId" 
+                :disabled="isLoading" 
+                :class="['form-select', { 'error-field': errors.shiftId }]"
+                @change="errors.shiftId = ''"
+              >
                 <option disabled value="">Pilih Shift</option>
                 <option v-for="s in shifts" :key="s.id" :value="s.id">
                   {{ s.name }}
                 </option>
               </select>
+              <span v-if="errors.shiftId" class="error-message">{{ errors.shiftId }}</span>
             </div>
 
             <div class="form-group">
-              <label for="supplier">Supplier</label>
+              <label for="supplier">
+                Supplier <span class="required-star">*</span>
+              </label>
               <select
-  id="supplier"
-  v-model="supplierId"
-  :disabled="isLoading"
-  class="form-select"
->
-  <option value="">Tanpa Supplier</option>
-  <option v-for="s in suppliers" :key="s.id" :value="s.id">
-    {{ s.name }}
-  </option>
-</select>
-
+                id="supplier"
+                v-model="supplierId"
+                :disabled="isLoading"
+                :class="['form-select', { 'error-field': errors.supplierId }]"
+                @change="errors.supplierId = ''"
+              >
+                <option disabled value="">Pilih Supplier</option>
+                <option v-for="s in suppliers" :key="s.id" :value="s.id">
+                  {{ s.name }}
+                </option>
+              </select>
+              <span v-if="errors.supplierId" class="error-message">{{ errors.supplierId }}</span>
             </div>
           </div>
 
           <div class="form-group">
-            <label for="itemNumber">Item Number</label>
+            <label for="itemNumber">
+              Item Number <span class="required-star">*</span>
+            </label>
             <div class="input-with-loader">
-              <input id="itemNumber" v-model="itemNumber" placeholder="Masukkan Item Number" @blur="loadItem"
-                class="form-input" required />
+              <input 
+                id="itemNumber" 
+                v-model="itemNumber" 
+                placeholder="Masukkan Item Number" 
+                @blur="loadItem"
+                :class="['form-input', { 'error-field': errors.itemNumber }]"
+                @input="errors.itemNumber = ''"
+              />
               <div v-if="isLoadingItem" class="loader-spinner"></div>
             </div>
+            <span v-if="errors.itemNumber" class="error-message">{{ errors.itemNumber }}</span>
           </div>
 
           <!-- Item Detail Card -->
@@ -318,28 +442,48 @@ const logout = async () => {
 
           <div class="form-row">
             <div class="form-group">
-              <label for="qtyOutput">Qty Output</label>
+              <label for="qtyOutput">
+                Qty Output <span class="required-star">*</span>
+              </label>
               <div class="input-with-unit">
-                <input id="qtyOutput" v-model="qtyOutput" type="number" min="0" placeholder="0" class="form-input"
-                  required />
+                <input 
+                  id="qtyOutput" 
+                  v-model.number="qtyOutput" 
+                  type="number" 
+                  min="0" 
+                  placeholder="0" 
+                  :class="['form-input', { 'error-field': errors.qtyOutput }]"
+                  @input="errors.qtyOutput = ''"
+                />
                 <span class="unit-badge">{{ unitLabel }}</span>
               </div>
+              <span v-if="errors.qtyOutput" class="error-message">{{ errors.qtyOutput }}</span>
             </div>
 
             <div class="form-group">
-              <label for="qtyReject">Qty Reject</label>
+              <label for="qtyReject">
+                Qty Reject <span class="required-star">*</span>
+              </label>
               <div class="input-with-unit">
-                <input id="qtyReject" v-model="qtyReject" type="number" min="0" placeholder="0" class="form-input"
-                  required />
+                <input 
+                  id="qtyReject" 
+                  v-model.number="qtyReject" 
+                  type="number" 
+                  min="0" 
+                  placeholder="0" 
+                  :class="['form-input', { 'error-field': errors.qtyReject }]"
+                  @input="errors.qtyReject = ''"
+                />
                 <span class="unit-badge">{{ unitLabel }}</span>
               </div>
+              <span v-if="errors.qtyReject" class="error-message">{{ errors.qtyReject }}</span>
             </div>
           </div>
         </div>
 
         <!-- Problem Section -->
         <div class="form-section">
-          <h3 class="section-title">Kendala Produksi</h3>
+          <h3 class="section-title">Kendala Produksi <span style="font-size: 0.875rem; font-weight: 400; color: #666;">(Opsional)</span></h3>
 
           <div class="form-group">
             <label for="comments">Jenis Kendala (Bisa pilih lebih dari 1)</label>
@@ -369,10 +513,10 @@ const logout = async () => {
           </div>
 
           <div class="form-group">
-            <label for="problemMinutes">Durasi Kendala (menit)</label>
+            <label for="problemMinutes">Durasi Kendala (menit) <span style="font-size: 0.875rem; font-weight: 400; color: #666;">(Wajib jika ada kendala)</span></label>
             <input
               id="problemMinutes"
-              v-model="problemMinutes"
+              v-model.number="problemMinutes"
               type="number"
               min="0"
               placeholder="0"
@@ -400,7 +544,7 @@ const logout = async () => {
          <button
   type="submit"
   class="submit-button"
-  :disabled="isSubmitting || isLoading || !shiftId || !itemDetail"
+  :disabled="isSubmitting || isLoading"
 >
           <span v-if="isSubmitting">
             <span class="button-spinner"></span>
@@ -637,6 +781,30 @@ const logout = async () => {
   color: #333b5f;
   font-size: 0.95rem;
   letter-spacing: 0.2px;
+}
+
+.required-star {
+  color: #dc3545;
+  font-weight: 700;
+  margin-left: 0.25rem;
+}
+
+.error-field {
+  border-color: #dc3545 !important;
+  background-color: #fff5f5 !important;
+}
+
+.error-field:focus {
+  border-color: #dc3545 !important;
+  box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.15) !important;
+}
+
+.error-message {
+  display: block;
+  color: #dc3545;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+  font-weight: 500;
 }
 
 .form-row {

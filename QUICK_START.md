@@ -21,7 +21,7 @@ git push -u origin main
    - Publish directory: `dist`
 5. **Environment variables** → Add variable:
    - Key: `VITE_API_URL`
-   - Value: `https://backend-fastapi-system-factory.fly.dev` (atau URL API Anda)
+   - Value: `http://103.164.99.2:1101` (atau URL API Anda)
 6. Klik "Deploy site"
 
 ### 3. Selesai! 🎉

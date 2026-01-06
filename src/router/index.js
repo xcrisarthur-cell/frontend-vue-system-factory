@@ -12,6 +12,8 @@ import ProductionAdminProduksi from '../pages/ProductionAdminProduksi.vue'
 import ProductionInput from '../pages/ProductionInput.vue'
 import ProductionLogs from '../pages/ProductionLogs.vue'
 import ProductionLogsEdit from '../pages/ProductionLogsEdit.vue'
+import ProductionTargetForm from '../pages/ProductionTargetForm.vue'
+import AttendanceForm from '../pages/AttendanceForm.vue'
 import ProductionDashboard from '../pages/ProductionDashboard.vue'
 import MasterData from '../pages/MasterData.vue'
 import MasterDataLogin from '../pages/MasterDataLogin.vue'
@@ -75,6 +77,14 @@ const routes = [
   { path: '/production-logs/create', component: ProductionLogsEdit },
   { path: '/production-logs/:id/edit', component: ProductionLogsEdit },
   { path: '/ProductionLogsEdit', component: ProductionLogsEdit }, // Keep for backward compatibility
+
+  // Production Targets
+  { path: '/production-targets/create', component: ProductionTargetForm },
+  { path: '/production-targets/:id/edit', component: ProductionTargetForm },
+  
+  // Attendances
+  { path: '/attendances/create', component: AttendanceForm },
+  { path: '/attendances/:id/edit', component: AttendanceForm },
   
   // Master Data Management
   { path: '/master-data-login', component: MasterDataLogin },
