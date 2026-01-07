@@ -18,7 +18,7 @@ const envFiles = {
     VITE_ENV: 'local'
   },
   production: {
-    VITE_API_URL: 'http://103.164.99.2:1101',
+    VITE_API_URL: '/api',
     VITE_ENV: 'production'
   }
 };
