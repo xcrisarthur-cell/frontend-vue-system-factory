@@ -3,9 +3,13 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api/http'
 import { modal } from '../plugins/modal'
+import { useCoordinatorSessionStore } from '../store/coordinatorSession'
+import { useSupervisorSessionStore } from '../store/supervisorSession'
 
 const route = useRoute()
 const router = useRouter()
+const coordinatorSession = useCoordinatorSessionStore()
+const supervisorSession = useSupervisorSessionStore()
 const targetId = route.params.id
 const isLoading = ref(false)
 const isSubmitting = ref(false)
@@ -90,6 +94,12 @@ const fetchTarget = async () => {
   }
 }
 
+const getReturnPath = () => {
+  if (supervisorSession.isAuthenticated) return '/production-supervisor'
+  if (coordinatorSession.isAuthenticated) return '/production-coordinator'
+  return '/production-menu'
+}
+
 const handleSubmit = async () => {
   if (!form.value.position_id) {
     await modal.showWarning('Pilih Position')
@@ -114,7 +124,7 @@ const handleSubmit = async () => {
       await modal.showSuccess('Production target berhasil ditambahkan')
     }
     
-    router.push('/production-coordinator')
+    router.push(getReturnPath())
   } catch (err) {
     error.value = err.response?.data?.detail || `Gagal ${targetId ? 'memperbarui' : 'menambahkan'} production target`
   } finally {
@@ -123,7 +133,7 @@ const handleSubmit = async () => {
 }
 
 const goBack = () => {
-  router.push('/production-coordinator')
+  router.push(getReturnPath())
 }
 
 onMounted(async () => {

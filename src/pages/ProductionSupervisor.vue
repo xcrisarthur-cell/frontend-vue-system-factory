@@ -287,7 +287,7 @@ onMounted(async () => {
   <div class="page-container">
     <div class="page-header">
       <div>
-        <h1>Production Logs - Supervisor</h1>
+        <h1>Production - Supervisor</h1>
         <p class="supervisor-name">Logged in as: {{ supervisorSession.supervisorName }}</p>
       </div>
       <div class="header-actions">
