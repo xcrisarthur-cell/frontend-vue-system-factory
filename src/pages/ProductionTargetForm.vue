@@ -110,7 +110,7 @@ const handleSubmit = async () => {
       await api.put(`/production-targets/${targetId}`, payload)
       await modal.showSuccess('Production target berhasil diperbarui')
     } else {
-      await api.post('/production-targets/', payload)
+      await api.post('/production-targets', payload)
       await modal.showSuccess('Production target berhasil ditambahkan')
     }
     

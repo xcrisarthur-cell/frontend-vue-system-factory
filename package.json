@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "dev:local": "node scripts/switch-env.js local && vite",
+    "dev:live": "node scripts/switch-env.js live && vite",
     "dev:prod": "node scripts/switch-env.js production && vite",
     "build": "vite build",
     "build:local": "node scripts/switch-env.js local && vite build",

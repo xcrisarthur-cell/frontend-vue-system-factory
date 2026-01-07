@@ -17,6 +17,10 @@ const envFiles = {
     VITE_API_URL: 'http://127.0.0.1:8000',
     VITE_ENV: 'local'
   },
+  live: {
+    VITE_API_URL: 'http://103.164.99.2:1101',
+    VITE_ENV: 'local'
+  },
   production: {
     VITE_API_URL: '/api',
     VITE_ENV: 'production'
@@ -26,7 +30,7 @@ const envFiles = {
 function switchEnvironment(env) {
   if (!envFiles[env]) {
     console.error(`❌ Environment "${env}" tidak valid!`);
-    console.log('Gunakan: local atau production');
+    console.log('Gunakan: local, live, atau production');
     process.exit(1);
   }
 
@@ -52,10 +56,11 @@ const env = process.argv[2];
 if (!env) {
   console.log('🔧 Environment Switcher');
   console.log('=====================\n');
-  console.log('Usage: node scripts/switch-env.js [local|production]\n');
+  console.log('Usage: node scripts/switch-env.js [local|live|production]\n');
   console.log('Atau gunakan npm scripts:');
-  console.log('  npm run env:local      - Switch ke local');
-  console.log('  npm run env:prod       - Switch ke production\n');
+  console.log('  npm run dev:local      - Frontend Local -> Backend Local (localhost:8000)');
+  console.log('  npm run dev:live       - Frontend Local -> Backend Server (103.164.99.2)');
+  console.log('  npm run dev:prod       - Simulasi Production (via Proxy)\n');
   
   // Check current environment
   const envPath = path.join(__dirname, '..', '.env');
