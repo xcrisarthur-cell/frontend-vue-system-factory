@@ -209,7 +209,7 @@ const submit = async () => {
     
     if (manualComment.value.trim()) {
       try {
-        const newCommentRes = await api.post('/problem-comments/', {
+        const newCommentRes = await api.post('/problem-comments', {
           description: manualComment.value.trim()
         })
         finalCommentIds.push(newCommentRes.data.id)
