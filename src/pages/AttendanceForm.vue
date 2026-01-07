@@ -102,7 +102,7 @@ const handleSubmit = async () => {
         notes: e.notes || null,
         approved_coordinator: true
       }))
-      await Promise.all(payloads.map(p => api.post('/attendances/', p)))
+      await Promise.all(payloads.map(p => api.post('/attendances', p)))
       await modal.showSuccess(`Attendance berhasil ditambahkan untuk ${payloads.length} worker`)
       router.push('/production-coordinator')
     } catch (err) {

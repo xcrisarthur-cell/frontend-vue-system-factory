@@ -291,7 +291,7 @@ const submitAttendance = async () => {
       await api.put(`/attendances/${attendanceForm.value.id}`, payload)
     } else {
       payload.approved_coordinator = true
-      await api.post('/attendances/', payload)
+      await api.post('/attendances', payload)
     }
     await modal.showSuccess('Attendance berhasil disimpan')
     showAttendanceModal.value = false
