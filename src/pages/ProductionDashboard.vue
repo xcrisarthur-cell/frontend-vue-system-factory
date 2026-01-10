@@ -40,6 +40,8 @@ const filterItemId = ref('')
 const filterApprovalCoordinator = ref('')
 const filterApprovalSpv = ref('')
 const searchQuery = ref('')
+const workerSearchInput = ref('')
+const itemSearchInput = ref('')
 
 // Master data
 const workers = ref([])
@@ -210,7 +212,53 @@ const clearFilters = () => {
   filterApprovalCoordinator.value = ''
   filterApprovalSpv.value = ''
   searchQuery.value = ''
+  workerSearchInput.value = ''
+  itemSearchInput.value = ''
   subPositions.value = []
+}
+
+const syncWorkerFilterBySearch = () => {
+  const raw = (workerSearchInput.value || '').trim()
+  if (!raw) {
+    filterWorkerId.value = ''
+    return
+  }
+
+  const idMatch = raw.match(/\b\d+\b/)
+  const idFromText = idMatch ? Number(idMatch[0]) : null
+
+  const exactWorker = workers.value.find(w => {
+    const name = (w.name || '').toString().trim().toLowerCase()
+    const id = Number(w.id)
+    return raw.toLowerCase() === name || raw === String(id) || (idFromText != null && idFromText === id)
+  })
+
+  filterWorkerId.value = exactWorker ? String(exactWorker.id) : ''
+}
+
+const syncItemFilterBySearch = () => {
+  const raw = (itemSearchInput.value || '').trim()
+  if (!raw) {
+    filterItemId.value = ''
+    return
+  }
+
+  const rawLower = raw.toLowerCase()
+  const idMatch = raw.match(/\b\d+\b/)
+  const idFromText = idMatch ? Number(idMatch[0]) : null
+
+  const exactItem = items.value.find(it => {
+    const id = Number(it.id)
+    const number = (it.item_number || '').toString().trim().toLowerCase()
+    const name = (it.item_name || '').toString().trim().toLowerCase()
+    return raw === String(id) ||
+      rawLower === number ||
+      rawLower === name ||
+      (idFromText != null && idFromText === id) ||
+      (rawLower.includes('-') && rawLower.split('-')[0].trim() === number)
+  })
+
+  filterItemId.value = exactItem ? String(exactItem.id) : ''
 }
 
 // Chart Data - Production per Worker (using filtered data)
@@ -672,12 +720,19 @@ onUnmounted(() => {
         <div class="filters-grid">
           <div class="filter-group">
             <label>Worker</label>
-            <select v-model="filterWorkerId" class="filter-input">
-              <option value="">Semua Worker</option>
-              <option v-for="worker in workers" :key="worker.id" :value="worker.id">
-                {{ worker.name }}
+            <input
+              v-model="workerSearchInput"
+              list="dashboard-workers-list"
+              class="filter-input"
+              placeholder="Ketik nama atau ID worker"
+              @change="syncWorkerFilterBySearch"
+              @blur="syncWorkerFilterBySearch"
+            />
+            <datalist id="dashboard-workers-list">
+              <option v-for="worker in workers" :key="worker.id" :value="worker.name">
+                {{ worker.name }} (ID: {{ worker.id }})
               </option>
-            </select>
+            </datalist>
           </div>
 
           <div class="filter-group">
@@ -722,12 +777,19 @@ onUnmounted(() => {
 
           <div class="filter-group">
             <label>Item</label>
-            <select v-model="filterItemId" class="filter-input">
-              <option value="">Semua Item</option>
-              <option v-for="item in items" :key="item.id" :value="item.id">
-                {{ item.item_name || item.item_number }}
+            <input
+              v-model="itemSearchInput"
+              list="dashboard-items-list"
+              class="filter-input"
+              placeholder="Ketik item number, nama, atau ID"
+              @change="syncItemFilterBySearch"
+              @blur="syncItemFilterBySearch"
+            />
+            <datalist id="dashboard-items-list">
+              <option v-for="item in items" :key="item.id" :value="item.item_number || item.item_name || String(item.id)">
+                {{ item.item_number }} - {{ item.item_name }} (ID: {{ item.id }})
               </option>
-            </select>
+            </datalist>
           </div>
 
           <div class="filter-group">

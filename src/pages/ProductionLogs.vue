@@ -140,18 +140,35 @@ const handleDelete = async (id) => {
 
 const handleEdit = (id) => {
   const workerId = route.query.worker_id
+  const from = route.query.from
   if (workerId) {
-    router.push(`/production-logs/${id}/edit?worker_id=${workerId}`)
+    const query = new URLSearchParams()
+    query.set('worker_id', workerId)
+    if (from) query.set('from', String(from))
+    router.push(`/production-logs/${id}/edit?${query.toString()}`)
   } else {
-    router.push(`/production-logs/${id}/edit`)
+    if (from) {
+      router.push(`/production-logs/${id}/edit?from=${encodeURIComponent(String(from))}`)
+    } else {
+      router.push(`/production-logs/${id}/edit`)
+    }
   }
 }
 
 const handleCreate = () => {
+  const from = route.query.from
+  if (from) {
+    router.push(`/production-logs/create?from=${encodeURIComponent(String(from))}`)
+    return
+  }
   router.push('/production-logs/create')
 }
 
 const goBack = () => {
+  if (route.query.from === 'master-data') {
+    router.push('/master-data')
+    return
+  }
   // Jika dari operator view, kembali ke ProductionLogin
   if (isOperatorView.value && route.query.worker_id) {
     router.push('/production-operator')

@@ -13,6 +13,31 @@ const coordinatorSession = useCoordinatorSessionStore()
 const logs = ref([])
 const targets = ref([])
 const attendances = ref([])
+const productionPlans = ref([])
+const showProductionLogModal = ref(false)
+const productionLogForm = ref({
+  id: null,
+  worker_id: '',
+  position_id: '',
+  sub_position_id: '',
+  shift_id: '',
+  supplier_id: '',
+  item_id: '',
+  qty_output: '',
+  qty_reject: '',
+  problem_duration_minutes: '',
+  created_at_date: '',
+  created_at_time: ''
+})
+const productionLogItemNumberInput = ref('')
+const productionLogOriginalCreatedAtDate = ref('')
+const productionLogOriginalCreatedAtTime = ref('')
+const productionLogSelectedProblemCommentIds = ref([])
+const productionLogProblemSearch = ref('')
+const productionLogManualProblemComment = ref('')
+const productionLogSubPositions = ref([])
+const isProductionLogSubmitting = ref(false)
+const productionLogError = ref(null)
 const showAttendanceModal = ref(false)
 const attendanceForm = ref({
   id: null,
@@ -24,11 +49,68 @@ const attendanceForm = ref({
 })
 const isAttendanceSubmitting = ref(false)
 const attendanceError = ref(null)
+const attendanceMode = ref('single')
+const attendanceBatchRows = ref([
+  { worker_id: '', status: 'HADIR', date: '', time: '', notes: '' }
+])
+const showTargetModal = ref(false)
+const targetForm = ref({
+  id: null,
+  target: '',
+  position_id: '',
+  sub_position_id: ''
+})
+const targetSubPositions = ref([])
+const isTargetSubmitting = ref(false)
+const targetError = ref(null)
+const showProductionPlanModal = ref(false)
+const productionPlanMode = ref('single')
+const productionPlanBatchRows = ref([])
+const productionPlanForm = ref({
+  id: null,
+  target: '',
+  item_id: '',
+  worker_id: '',
+  shift_id: '',
+  position_id: '',
+  sub_position_id: '',
+  note: ''
+})
+const productionPlanItemNumberInput = ref('')
+const productionPlanSubPositions = ref([])
+const isProductionPlanSubmitting = ref(false)
+const productionPlanError = ref(null)
 const activeTab = ref('logs')
 const isLoading = ref(false)
 const error = ref(null)
 const selectedLog = ref(null)
 const showDetailModal = ref(false)
+
+const getTodayLocalISODate = () => {
+  const d = new Date()
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+const buildCreatedAt = (dateStr) => {
+  const now = new Date()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mi = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  return `${dateStr}T${hh}:${mi}:${ss}`
+}
+
+const toISODateInput = (dateValue) => {
+  if (!dateValue) return ''
+  const d = new Date(dateValue)
+  if (Number.isNaN(d.getTime())) return ''
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
 
 // Filter states
 const filterWorkerId = ref('')
@@ -45,18 +127,45 @@ const positions = ref([])
 const subPositions = ref([])
 const suppliers = ref([])
 const items = ref([])
+const problemComments = ref([])
+
+const getItemLabel = (item) => {
+  if (!item) return ''
+  if (item.item_name) return `${item.item_number} - ${item.item_name}`
+  return item.item_number
+}
+
+const normalizeText = (value) => {
+  return String(value || '').trim().toLowerCase()
+}
+
+const extractTimePart = (dateValue) => {
+  if (!dateValue) return ''
+  const d = new Date(dateValue)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${hh}:${mi}:${ss}`
+}
+
+const buildCreatedAtWithTime = (dateStr, timeStr) => {
+  const t = timeStr || extractTimePart(new Date()) || '00:00:00'
+  return `${dateStr}T${t}`
+}
 
 const fetchData = async () => {
   isLoading.value = true
   error.value = null
   try {
-    const [logsRes, workersRes, shiftsRes, positionsRes, suppliersRes, itemsRes] = await Promise.all([
+    const [logsRes, workersRes, shiftsRes, positionsRes, suppliersRes, itemsRes, problemCommentsRes] = await Promise.all([
       productionLogsApi.getAll(),
       workersApi.getAll(),
       api.get('/shifts'),
       api.get('/positions'),
       api.get('/suppliers'),
-      api.get('/items')
+      api.get('/items'),
+      api.get('/problem-comments')
     ])
     logs.value = logsRes.data
     workers.value = workersRes.data
@@ -64,6 +173,7 @@ const fetchData = async () => {
     positions.value = positionsRes.data
     suppliers.value = suppliersRes.data
     items.value = itemsRes.data
+    problemComments.value = problemCommentsRes.data
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data'
     console.error('Error fetching data:', err)
@@ -133,6 +243,110 @@ const filteredLogs = computed(() => {
   return filtered
 })
 
+const filteredProblemComments = computed(() => {
+  const q = normalizeText(productionLogProblemSearch.value)
+  if (!q) return problemComments.value
+  return problemComments.value.filter(pc => normalizeText(pc.description).includes(q))
+})
+
+const syncProductionLogItemByItemNumber = async () => {
+  const itemNumber = String(productionLogItemNumberInput.value || '').trim()
+  if (!itemNumber) {
+    productionLogForm.value.item_id = ''
+    return
+  }
+
+  const localMatch = items.value.find(i => String(i.item_number) === itemNumber)
+  if (localMatch) {
+    productionLogForm.value.item_id = localMatch.id
+    return
+  }
+
+  try {
+    const res = await api.get(`/items/${encodeURIComponent(itemNumber)}`)
+    const item = res.data
+    if (item?.id) {
+      productionLogForm.value.item_id = item.id
+      if (!items.value.find(i => i.id === item.id)) {
+        items.value = [item, ...items.value]
+      }
+      return
+    }
+  } catch {}
+
+  productionLogForm.value.item_id = ''
+}
+
+const syncProductionPlanItemByItemNumber = async () => {
+  const itemNumber = String(productionPlanItemNumberInput.value || '').trim()
+  if (!itemNumber) {
+    productionPlanForm.value.item_id = ''
+    return
+  }
+
+  const localMatch = items.value.find(i => String(i.item_number) === itemNumber)
+  if (localMatch) {
+    productionPlanForm.value.item_id = localMatch.id
+    return
+  }
+
+  try {
+    const res = await api.get(`/items/${encodeURIComponent(itemNumber)}`)
+    const item = res.data
+    if (item?.id) {
+      productionPlanForm.value.item_id = item.id
+      if (!items.value.find(i => i.id === item.id)) {
+        items.value = [item, ...items.value]
+      }
+      return
+    }
+  } catch {}
+
+  productionPlanForm.value.item_id = ''
+}
+
+const createProblemComment = async (description) => {
+  const trimmed = String(description || '').trim()
+  if (!trimmed) return null
+
+  try {
+    const res = await api.post('/problem-comments', { description: trimmed })
+    return res.data?.id || null
+  } catch (err) {
+    if (err.response?.status === 400) {
+      try {
+        const all = await api.get('/problem-comments')
+        const existing = all.data.find(c => normalizeText(c.description) === normalizeText(trimmed))
+        return existing?.id || null
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
+const addManualProblemCommentToSelection = async () => {
+  const newId = await createProblemComment(productionLogManualProblemComment.value)
+  if (!newId) {
+    productionLogError.value = 'Gagal membuat problem comment baru'
+    return
+  }
+
+  if (!problemComments.value.find(pc => pc.id === newId)) {
+    try {
+      const all = await api.get('/problem-comments')
+      problemComments.value = all.data
+    } catch {}
+  }
+
+  if (!productionLogSelectedProblemCommentIds.value.includes(newId)) {
+    productionLogSelectedProblemCommentIds.value = [...productionLogSelectedProblemCommentIds.value, newId]
+  }
+
+  productionLogManualProblemComment.value = ''
+}
+
 const handleApprove = async (logId) => {
   const confirmed = await modal.confirm('Yakin ingin approve production log ini sebagai coordinator?')
   if (!confirmed) return
@@ -157,6 +371,161 @@ const handleApprove = async (logId) => {
 
 const handleEdit = (id) => {
   router.push(`/production-logs/${id}/edit?from=coordinator`)
+}
+
+const loadProductionLogSubPositions = async () => {
+  productionLogForm.value.sub_position_id = ''
+  productionLogSubPositions.value = []
+
+  if (!productionLogForm.value.position_id) return
+
+  try {
+    const res = await api.get(`/sub-positions/by-position/${productionLogForm.value.position_id}`)
+    productionLogSubPositions.value = res.data
+  } catch (err) {
+    console.error('Error loading sub positions:', err)
+  }
+}
+
+const openProductionLogModal = async (record = null) => {
+  productionLogError.value = null
+  if (record) {
+    productionLogForm.value = {
+      id: record.id,
+      worker_id: record.worker_id ?? '',
+      position_id: record.position_id ?? '',
+      sub_position_id: record.sub_position_id ?? '',
+      shift_id: record.shift_id ?? '',
+      supplier_id: record.supplier_id ?? '',
+      item_id: record.item_id ?? '',
+      qty_output: record.qty_output?.toString?.() ?? '',
+      qty_reject: record.qty_reject?.toString?.() ?? '',
+      problem_duration_minutes: record.problem_duration_minutes?.toString?.() ?? '',
+      created_at_date: toISODateInput(record.created_at),
+      created_at_time: extractTimePart(record.created_at)
+    }
+    productionLogOriginalCreatedAtDate.value = productionLogForm.value.created_at_date
+    productionLogOriginalCreatedAtTime.value = productionLogForm.value.created_at_time
+    productionLogItemNumberInput.value = record.item?.item_number || ''
+    productionLogSelectedProblemCommentIds.value = Array.isArray(record.problem_comments)
+      ? record.problem_comments.map(pc => pc.id).filter(Boolean)
+      : []
+    productionLogProblemSearch.value = ''
+    productionLogManualProblemComment.value = ''
+    if (productionLogForm.value.position_id) {
+      await loadProductionLogSubPositions()
+    }
+  } else {
+    productionLogForm.value = {
+      id: null,
+      worker_id: '',
+      position_id: '',
+      sub_position_id: '',
+      shift_id: '',
+      supplier_id: '',
+      item_id: '',
+      qty_output: '',
+      qty_reject: '',
+      problem_duration_minutes: '',
+      created_at_date: getTodayLocalISODate(),
+      created_at_time: extractTimePart(new Date())
+    }
+    productionLogOriginalCreatedAtDate.value = ''
+    productionLogOriginalCreatedAtTime.value = ''
+    productionLogItemNumberInput.value = ''
+    productionLogSelectedProblemCommentIds.value = []
+    productionLogProblemSearch.value = ''
+    productionLogManualProblemComment.value = ''
+    productionLogSubPositions.value = []
+  }
+  showProductionLogModal.value = true
+}
+
+const closeProductionLogModal = () => {
+  showProductionLogModal.value = false
+}
+
+const submitProductionLog = async () => {
+  if (!productionLogForm.value.worker_id || !productionLogForm.value.position_id || !productionLogForm.value.shift_id) {
+    productionLogError.value = 'Worker, Position, dan Shift wajib diisi'
+    return
+  }
+
+  const output = Number(productionLogForm.value.qty_output || 0)
+  const reject = Number(productionLogForm.value.qty_reject || 0)
+  if (!output && !reject) {
+    productionLogError.value = 'Qty Output atau Qty Reject wajib diisi'
+    return
+  }
+  if (reject > output) {
+    productionLogError.value = 'Qty Reject tidak boleh lebih besar dari Qty Output'
+    return
+  }
+
+  if (productionLogSubPositions.value.length > 0 && !productionLogForm.value.sub_position_id) {
+    productionLogError.value = 'Sub Position wajib dipilih untuk posisi ini'
+    return
+  }
+
+  isProductionLogSubmitting.value = true
+  productionLogError.value = null
+  try {
+    await syncProductionLogItemByItemNumber()
+    if (!productionLogForm.value.item_id) {
+      productionLogError.value = 'Item wajib diisi'
+      return
+    }
+
+    const basePayload = {
+      worker_id: Number(productionLogForm.value.worker_id),
+      position_id: Number(productionLogForm.value.position_id),
+      sub_position_id: productionLogForm.value.sub_position_id ? Number(productionLogForm.value.sub_position_id) : null,
+      shift_id: Number(productionLogForm.value.shift_id),
+      supplier_id: productionLogForm.value.supplier_id ? Number(productionLogForm.value.supplier_id) : null,
+      item_id: Number(productionLogForm.value.item_id),
+      qty_output: output,
+      qty_reject: reject,
+      problem_duration_minutes: productionLogForm.value.problem_duration_minutes ? Number(productionLogForm.value.problem_duration_minutes) : null,
+      problem_comment_ids: productionLogSelectedProblemCommentIds.value.length > 0 ? productionLogSelectedProblemCommentIds.value : null
+    }
+
+    if (productionLogForm.value.id) {
+      const updatePayload = { ...basePayload }
+      if (
+        productionLogForm.value.created_at_date &&
+        productionLogForm.value.created_at_date !== productionLogOriginalCreatedAtDate.value
+      ) {
+        updatePayload.created_at = buildCreatedAtWithTime(productionLogForm.value.created_at_date, productionLogForm.value.created_at_time)
+      }
+      await productionLogsApi.update(productionLogForm.value.id, updatePayload)
+    } else {
+      const createPayload = {
+        ...basePayload,
+        created_at: productionLogForm.value.created_at_date ? buildCreatedAtWithTime(productionLogForm.value.created_at_date, productionLogForm.value.created_at_time) : undefined
+      }
+      await productionLogsApi.create(createPayload)
+    }
+
+    showProductionLogModal.value = false
+    modal.showSuccess('Production Log berhasil disimpan')
+    await fetchData()
+  } catch (err) {
+    productionLogError.value = err.response?.data?.detail || 'Gagal menyimpan production log'
+  } finally {
+    isProductionLogSubmitting.value = false
+  }
+}
+
+const handleDeleteProductionLog = async (id) => {
+  const confirmed = await modal.confirm('Yakin ingin menghapus production log ini?')
+  if (!confirmed) return
+  try {
+    await productionLogsApi.delete(id)
+    modal.showSuccess('Production Log berhasil dihapus')
+    await fetchData()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal menghapus production log')
+  }
 }
 
 const handleShowDetail = (log) => {
@@ -210,6 +579,79 @@ const handleAddTarget = () => {
   router.push('/production-targets/create')
 }
 
+const loadTargetSubPositions = async () => {
+  targetForm.value.sub_position_id = ''
+  targetSubPositions.value = []
+
+  if (!targetForm.value.position_id) return
+
+  try {
+    const res = await api.get(`/sub-positions/by-position/${targetForm.value.position_id}`)
+    targetSubPositions.value = res.data
+  } catch (err) {
+    console.error('Error loading sub positions:', err)
+  }
+}
+
+const openTargetModal = async (record = null) => {
+  targetError.value = null
+  if (record) {
+    targetForm.value = {
+      id: record.id,
+      target: record.target?.toString?.() ?? '',
+      position_id: record.position_id ?? '',
+      sub_position_id: record.sub_position_id ?? ''
+    }
+    if (targetForm.value.position_id) {
+      await loadTargetSubPositions()
+    }
+  } else {
+    targetForm.value = {
+      id: null,
+      target: '',
+      position_id: '',
+      sub_position_id: ''
+    }
+    targetSubPositions.value = []
+  }
+  showTargetModal.value = true
+}
+
+const closeTargetModal = () => {
+  showTargetModal.value = false
+}
+
+const submitTarget = async () => {
+  if (!targetForm.value.position_id || !targetForm.value.target) {
+    targetError.value = 'Position dan Target wajib diisi'
+    return
+  }
+
+  isTargetSubmitting.value = true
+  targetError.value = null
+  try {
+    const payload = {
+      target: Number(targetForm.value.target),
+      position_id: Number(targetForm.value.position_id),
+      sub_position_id: targetForm.value.sub_position_id ? Number(targetForm.value.sub_position_id) : null
+    }
+
+    if (targetForm.value.id) {
+      await api.put(`/production-targets/${targetForm.value.id}`, payload)
+    } else {
+      await api.post('/production-targets', payload)
+    }
+
+    showTargetModal.value = false
+    modal.showSuccess('Production Target berhasil disimpan')
+    await fetchTargets()
+  } catch (err) {
+    targetError.value = err.response?.data?.detail || 'Gagal menyimpan production target'
+  } finally {
+    isTargetSubmitting.value = false
+  }
+}
+
 const handleDeleteTarget = async (id) => {
   const confirmed = await modal.confirm('Yakin ingin menghapus production target ini?')
   if (!confirmed) return
@@ -236,9 +678,263 @@ const fetchAttendances = async () => {
   }
 }
 
+const fetchProductionPlans = async () => {
+  isLoading.value = true
+  error.value = null
+  try {
+    const res = await api.get('/production-plans')
+    productionPlans.value = res.data
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Gagal memuat data'
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const loadProductionPlanSubPositions = async () => {
+  productionPlanForm.value.sub_position_id = ''
+  productionPlanSubPositions.value = []
+
+  if (!productionPlanForm.value.position_id) return
+  try {
+    const res = await api.get(`/sub-positions/by-position/${productionPlanForm.value.position_id}`)
+    productionPlanSubPositions.value = res.data
+  } catch (err) {
+    console.error('Error loading sub positions:', err)
+  }
+}
+
+const addProductionPlanRow = () => {
+  productionPlanBatchRows.value.push({
+    item_id: '',
+    shift_id: '',
+    position_id: '',
+    sub_position_id: '',
+    target: '',
+    note: '',
+    itemNumberInput: '',
+    subPositions: []
+  })
+}
+
+const removeProductionPlanRow = (index) => {
+  if (productionPlanBatchRows.value.length <= 1) return
+  productionPlanBatchRows.value = productionPlanBatchRows.value.filter((_, i) => i !== index)
+}
+
+const syncProductionPlanItemByItemNumberRow = async (row) => {
+  const itemNumber = String(row.itemNumberInput || '').trim()
+  if (!itemNumber) {
+    row.item_id = ''
+    return
+  }
+
+  const localMatch = items.value.find(i => String(i.item_number) === itemNumber)
+  if (localMatch) {
+    row.item_id = localMatch.id
+    return
+  }
+
+  try {
+    const res = await api.get(`/items/${encodeURIComponent(itemNumber)}`)
+    const item = res.data
+    if (item?.id) {
+      row.item_id = item.id
+      if (!items.value.find(i => i.id === item.id)) {
+        items.value = [item, ...items.value]
+      }
+      return
+    }
+  } catch {}
+
+  row.item_id = ''
+}
+
+const loadProductionPlanSubPositionsRow = async (row) => {
+  row.sub_position_id = ''
+  row.subPositions = []
+
+  if (!row.position_id) return
+  try {
+    const res = await api.get(`/sub-positions/by-position/${row.position_id}`)
+    row.subPositions = res.data
+  } catch (err) {
+    console.error('Error loading sub positions:', err)
+  }
+}
+
+const openProductionPlanModal = async (record = null) => {
+  productionPlanError.value = null
+  if (record) {
+    productionPlanMode.value = 'single'
+    productionPlanForm.value = {
+      id: record.id,
+      target: record.target?.toString?.() ?? '',
+      item_id: record.item_id ?? '',
+      worker_id: record.worker_id ?? '',
+      shift_id: record.shift_id ?? '',
+      position_id: record.position_id ?? '',
+      sub_position_id: record.sub_position_id ?? '',
+      note: record.note ?? ''
+    }
+    productionPlanItemNumberInput.value = record.item?.item_number || ''
+    if (productionPlanForm.value.position_id) {
+      await loadProductionPlanSubPositions()
+    }
+  } else {
+    productionPlanMode.value = 'batch'
+    productionPlanForm.value = {
+      id: null,
+      target: '',
+      item_id: '',
+      worker_id: '',
+      shift_id: '',
+      position_id: '',
+      sub_position_id: '',
+      note: ''
+    }
+    productionPlanItemNumberInput.value = ''
+    productionPlanSubPositions.value = []
+    
+    productionPlanBatchRows.value = [{
+      item_id: '',
+      shift_id: '',
+      position_id: '',
+      sub_position_id: '',
+      target: '',
+      note: '',
+      itemNumberInput: '',
+      subPositions: []
+    }]
+  }
+  showProductionPlanModal.value = true
+}
+
+const closeProductionPlanModal = () => {
+  showProductionPlanModal.value = false
+}
+
+const submitProductionPlan = async () => {
+  if (!productionPlanForm.value.id && productionPlanMode.value === 'batch') {
+    if (!productionPlanForm.value.worker_id) {
+      productionPlanError.value = 'Worker wajib dipilih'
+      return
+    }
+
+    // Check for empty rows (optional, or just validate that at least one is valid)
+    // But better to validate all filled rows
+    
+    isProductionPlanSubmitting.value = true
+    productionPlanError.value = null
+    
+    try {
+      let savedCount = 0
+      for (let i = 0; i < productionPlanBatchRows.value.length; i++) {
+        const row = productionPlanBatchRows.value[i]
+        
+        await syncProductionPlanItemByItemNumberRow(row)
+        
+        if (!row.target || !row.shift_id || !row.item_id) {
+           throw new Error(`Baris ${i + 1}: Target, Shift, dan Item wajib diisi`)
+        }
+        
+        const payload = {
+            target: Number(row.target),
+            item_id: Number(row.item_id),
+            worker_id: Number(productionPlanForm.value.worker_id),
+            shift_id: Number(row.shift_id),
+            position_id: row.position_id ? Number(row.position_id) : null,
+            sub_position_id: row.sub_position_id ? Number(row.sub_position_id) : null,
+            note: row.note ? row.note : null,
+            created_by: coordinatorSession.coordinatorId
+        }
+        
+        await api.post('/production-plans', payload)
+        savedCount++
+      }
+      
+      showProductionPlanModal.value = false
+      modal.showSuccess(`Berhasil menambah ${savedCount} production plan`)
+      await fetchProductionPlans()
+      
+    } catch (err) {
+       productionPlanError.value = err.message || err.response?.data?.detail || 'Gagal menyimpan production plan'
+    } finally {
+       isProductionPlanSubmitting.value = false
+    }
+    return
+  }
+
+  if (
+    !productionPlanForm.value.target ||
+    !productionPlanForm.value.worker_id ||
+    !productionPlanForm.value.shift_id
+  ) {
+    productionPlanError.value = 'Target, Worker, Item, dan Shift wajib diisi'
+    return
+  }
+
+  isProductionPlanSubmitting.value = true
+  productionPlanError.value = null
+  try {
+    await syncProductionPlanItemByItemNumber()
+    if (!productionPlanForm.value.item_id) {
+      productionPlanError.value = 'Item wajib diisi'
+      return
+    }
+
+    const basePayload = {
+      target: Number(productionPlanForm.value.target),
+      item_id: Number(productionPlanForm.value.item_id),
+      worker_id: Number(productionPlanForm.value.worker_id),
+      shift_id: Number(productionPlanForm.value.shift_id),
+      position_id: productionPlanForm.value.position_id ? Number(productionPlanForm.value.position_id) : null,
+      sub_position_id: productionPlanForm.value.sub_position_id ? Number(productionPlanForm.value.sub_position_id) : null,
+      note: productionPlanForm.value.note ? productionPlanForm.value.note : null
+    }
+
+    if (productionPlanForm.value.id) {
+      await api.put(`/production-plans/${productionPlanForm.value.id}`, basePayload)
+    } else {
+      if (!coordinatorSession.isAuthenticated || !coordinatorSession.coordinatorId) {
+        await modal.showError('Session tidak valid. Silakan login ulang.')
+        showProductionPlanModal.value = false
+        router.push('/coordinator-login')
+        return
+      }
+      const createPayload = {
+        ...basePayload,
+        created_by: coordinatorSession.coordinatorId
+      }
+      await api.post('/production-plans', createPayload)
+    }
+
+    showProductionPlanModal.value = false
+    modal.showSuccess('Production Plan berhasil disimpan')
+    await fetchProductionPlans()
+  } catch (err) {
+    productionPlanError.value = err.response?.data?.detail || 'Gagal menyimpan production plan'
+  } finally {
+    isProductionPlanSubmitting.value = false
+  }
+}
+
+const handleDeleteProductionPlan = async (id) => {
+  const confirmed = await modal.confirm('Yakin ingin menghapus production plan ini?')
+  if (!confirmed) return
+  try {
+    await api.delete(`/production-plans/${id}`)
+    await modal.showSuccess('Production Plan berhasil dihapus')
+    await fetchProductionPlans()
+  } catch (err) {
+    await modal.showError(err.response?.data?.detail || 'Gagal menghapus production plan')
+  }
+}
+
 const openAttendanceModal = (record = null) => {
   attendanceError.value = null
   if (record) {
+    attendanceMode.value = 'single'
     attendanceForm.value = {
       id: record.id,
       worker_id: record.worker?.id || '',
@@ -248,6 +944,7 @@ const openAttendanceModal = (record = null) => {
       notes: record.notes || ''
     }
   } else {
+    attendanceMode.value = 'single'
     attendanceForm.value = {
       id: null,
       worker_id: '',
@@ -256,6 +953,7 @@ const openAttendanceModal = (record = null) => {
       time: '',
       notes: ''
     }
+    attendanceBatchRows.value = [{ worker_id: '', status: 'HADIR', date: '', time: '', notes: '' }]
   }
   showAttendanceModal.value = true
 }
@@ -264,15 +962,59 @@ const closeAttendanceModal = () => {
   showAttendanceModal.value = false
 }
 
+const addAttendanceRow = () => {
+  attendanceBatchRows.value = [
+    ...attendanceBatchRows.value,
+    { worker_id: '', status: 'HADIR', date: '', time: '', notes: '' }
+  ]
+}
+
+const removeAttendanceRow = (index) => {
+  if (attendanceBatchRows.value.length <= 1) return
+  attendanceBatchRows.value = attendanceBatchRows.value.filter((_, i) => i !== index)
+}
+
 const handleAddAttendance = () => {
-  router.push('/attendances/create')
+  openAttendanceModal()
 }
 
 const handleEditAttendance = (record) => {
-  router.push(`/attendances/${record.id}/edit`)
+  openAttendanceModal(record)
 }
 
 const submitAttendance = async () => {
+  if (!attendanceForm.value.id && attendanceMode.value === 'batch') {
+    const invalidIndex = attendanceBatchRows.value.findIndex(r => !r.worker_id || !r.status || !r.date || !r.time)
+    if (invalidIndex !== -1) {
+      attendanceError.value = `Baris ${invalidIndex + 1}: Worker, Status, Tanggal, dan Waktu wajib diisi`
+      return
+    }
+
+    isAttendanceSubmitting.value = true
+    attendanceError.value = null
+    try {
+      for (let i = 0; i < attendanceBatchRows.value.length; i += 1) {
+        const r = attendanceBatchRows.value[i]
+        await api.post('/attendances', {
+          worker_id: Number(r.worker_id),
+          status: r.status,
+          date: r.date,
+          time: r.time,
+          notes: r.notes || null,
+          approved_coordinator: true
+        })
+      }
+      showAttendanceModal.value = false
+      modal.showSuccess(`Berhasil menambah ${attendanceBatchRows.value.length} attendance`)
+      fetchAttendances()
+    } catch (err) {
+      attendanceError.value = err.response?.data?.detail || 'Gagal menyimpan attendance'
+    } finally {
+      isAttendanceSubmitting.value = false
+    }
+    return
+  }
+
   if (!attendanceForm.value.worker_id || !attendanceForm.value.status || !attendanceForm.value.date || !attendanceForm.value.time) {
     attendanceError.value = 'Worker, Status, Tanggal, dan Waktu wajib diisi'
     return
@@ -293,8 +1035,8 @@ const submitAttendance = async () => {
       payload.approved_coordinator = true
       await api.post('/attendances', payload)
     }
-    await modal.showSuccess('Attendance berhasil disimpan')
     showAttendanceModal.value = false
+    modal.showSuccess('Attendance berhasil disimpan')
     fetchAttendances()
   } catch (err) {
     attendanceError.value = err.response?.data?.detail || 'Gagal menyimpan attendance'
@@ -323,6 +1065,8 @@ const setTab = async (tab) => {
     if (targets.value.length === 0) await fetchTargets()
   } else if (tab === 'attendance') {
     if (attendances.value.length === 0) await fetchAttendances()
+  } else if (tab === 'plans') {
+    if (productionPlans.value.length === 0) await fetchProductionPlans()
   }
 }
 
@@ -379,9 +1123,22 @@ onMounted(async () => {
       >
         Production Attendance
       </button>
+      <button
+        class="tab-btn"
+        :class="{ active: activeTab === 'plans' }"
+        @click="setTab('plans')"
+        type="button"
+      >
+        Production Plan
+      </button>
     </div>
 
     <div v-if="activeTab === 'logs'">
+    <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+      <button class="btn-add" @click="openProductionLogModal()">
+        + Tambah Production Log
+      </button>
+    </div>
     <!-- Filters -->
     <div class="filters-section">
       <h3>Filter</h3>
@@ -514,7 +1271,8 @@ onMounted(async () => {
             >
               Approve
             </button>
-            <button class="btn-edit" @click="handleEdit(log.id)">Edit</button>
+            <button class="btn-edit" @click="openProductionLogModal(log)">Edit</button>
+            <button class="btn-delete" @click="handleDeleteProductionLog(log.id)">Delete</button>
           </td>
         </tr>
       </tbody>
@@ -523,7 +1281,7 @@ onMounted(async () => {
 
     <div v-else-if="activeTab === 'targets'">
       <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
-        <button class="btn-add" @click="handleAddTarget">
+        <button class="btn-add" @click="openTargetModal()">
           + Tambah Target
         </button>
       </div>
@@ -553,7 +1311,7 @@ onMounted(async () => {
             <td data-label="Dibuat">{{ new Date(t.created_at).toLocaleString('id-ID') }}</td>
             <td data-label="Diperbarui">{{ new Date(t.updated_at).toLocaleString('id-ID') }}</td>
             <td class="actions" data-label="Aksi">
-              <button class="btn-edit" @click="handleEditTarget(t.id)">Edit</button>
+              <button class="btn-edit" @click="openTargetModal(t)">Edit</button>
               <button class="btn-delete" @click="handleDeleteTarget(t.id)">Delete</button>
             </td>
           </tr>
@@ -605,6 +1363,56 @@ onMounted(async () => {
             <td class="actions" data-label="Aksi">
               <button class="btn-edit" @click="handleEditAttendance(a)">Edit</button>
               <button class="btn-delete" @click="handleDeleteAttendance(a.id)">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div v-else-if="activeTab === 'plans'">
+      <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
+        <button class="btn-add" @click="openProductionPlanModal()">
+          + Tambah Production Plan
+        </button>
+      </div>
+      <div v-if="error" class="error-message">{{ error }}</div>
+      <div v-if="isLoading" class="loading">Memuat data...</div>
+      <div v-else-if="productionPlans.length === 0" class="empty-state">
+        <p>Tidak ada data production plan</p>
+      </div>
+      <table v-else class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Worker</th>
+            <th>Position</th>
+            <th>Sub Position</th>
+            <th>Item</th>
+            <th>Target</th>
+            <th>Shift</th>
+            <th>Catatan</th>
+            <th>Dibuat</th>
+            <th>Diperbarui</th>
+            <th>Dibuat Oleh</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="p in productionPlans" :key="p.id">
+            <td data-label="ID">{{ p.id }}</td>
+            <td data-label="Worker">{{ p.worker?.name || '-' }}</td>
+            <td data-label="Position">{{ p.position?.code || '-' }}</td>
+            <td data-label="Sub Position">{{ p.sub_position?.code || '-' }}</td>
+            <td data-label="Item">{{ p.item?.item_name || p.item?.item_number || '-' }}</td>
+            <td class="num" data-label="Target">{{ p.target }}</td>
+            <td data-label="Shift">{{ p.shift?.name || '-' }}</td>
+            <td data-label="Catatan">{{ p.note || '-' }}</td>
+            <td data-label="Dibuat">{{ new Date(p.created_at).toLocaleString('id-ID') }}</td>
+            <td data-label="Diperbarui">{{ new Date(p.updated_at).toLocaleString('id-ID') }}</td>
+            <td data-label="Dibuat Oleh">{{ p.created_by_worker?.name || '-' }}</td>
+            <td class="actions" data-label="Aksi">
+              <button class="btn-edit" @click="openProductionPlanModal(p)">Edit</button>
+              <button class="btn-delete" @click="handleDeleteProductionPlan(p.id)">Delete</button>
             </td>
           </tr>
         </tbody>
@@ -777,39 +1585,423 @@ onMounted(async () => {
           </div>
           <div class="modal-body">
             <div v-if="attendanceError" class="error-message">{{ attendanceError }}</div>
-            <div class="form-group">
-              <label>Worker</label>
-              <select v-model="attendanceForm.worker_id" class="filter-input">
-                <option value="" disabled>Pilih Worker</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+            <div class="form-group full-width" v-if="!attendanceForm.id">
+              <label>Mode Input</label>
+              <select v-model="attendanceMode" class="filter-input">
+                <option value="single">Satu-satu</option>
+                <option value="batch">Batch</option>
               </select>
             </div>
-            <div class="form-group">
-              <label>Status</label>
-              <select v-model="attendanceForm.status" class="filter-input">
-                <option value="HADIR">HADIR</option>
-                <option value="IJIN">IJIN</option>
-                <option value="CUTI">CUTI</option>
-                <option value="ALPA">ALPA</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Tanggal</label>
-              <input type="date" v-model="attendanceForm.date" class="filter-input" />
-            </div>
-            <div class="form-group">
-              <label>Waktu</label>
-              <input type="time" v-model="attendanceForm.time" class="filter-input" />
-            </div>
-            <div class="form-group">
-              <label>Catatan</label>
-              <input type="text" v-model="attendanceForm.notes" class="filter-input" placeholder="Opsional" />
-            </div>
+
+            <template v-if="attendanceForm.id || attendanceMode === 'single'">
+              <div class="form-group">
+                <label>Worker</label>
+                <select v-model="attendanceForm.worker_id" class="filter-input">
+                  <option value="" disabled>Pilih Worker</option>
+                  <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Status</label>
+                <select v-model="attendanceForm.status" class="filter-input">
+                  <option value="HADIR">HADIR</option>
+                  <option value="IJIN">IJIN</option>
+                  <option value="CUTI">CUTI</option>
+                  <option value="ALPA">ALPA</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Tanggal</label>
+                <input type="date" v-model="attendanceForm.date" class="filter-input" />
+              </div>
+              <div class="form-group">
+                <label>Waktu</label>
+                <input type="time" v-model="attendanceForm.time" class="filter-input" />
+              </div>
+              <div class="form-group">
+                <label>Catatan</label>
+                <input type="text" v-model="attendanceForm.notes" class="filter-input" placeholder="Opsional" />
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="form-group full-width" v-for="(row, idx) in attendanceBatchRows" :key="idx">
+                <div class="filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
+                  <div class="filter-group">
+                    <label>Worker (Baris {{ idx + 1 }})</label>
+                    <select v-model="row.worker_id" class="filter-input">
+                      <option value="" disabled>Pilih Worker</option>
+                      <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label>Status</label>
+                    <select v-model="row.status" class="filter-input">
+                      <option value="HADIR">HADIR</option>
+                      <option value="IJIN">IJIN</option>
+                      <option value="CUTI">CUTI</option>
+                      <option value="ALPA">ALPA</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label>Tanggal</label>
+                    <input type="date" v-model="row.date" class="filter-input" />
+                  </div>
+                  <div class="filter-group">
+                    <label>Waktu</label>
+                    <input type="time" v-model="row.time" class="filter-input" />
+                  </div>
+                  <div class="filter-group">
+                    <label>Catatan</label>
+                    <input type="text" v-model="row.notes" class="filter-input" placeholder="Opsional" />
+                  </div>
+                  <div class="filter-group" style="align-self: end;" v-if="attendanceBatchRows.length > 1">
+                    <button class="btn-delete" type="button" @click="removeAttendanceRow(idx)">Hapus Baris</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group full-width">
+                <button class="btn-add" type="button" @click="addAttendanceRow">+ Tambah Baris</button>
+              </div>
+            </template>
           </div>
           <div class="modal-footer">
             <button class="btn-back" @click="closeAttendanceModal">Batal</button>
             <button class="btn-approve" :disabled="isAttendanceSubmitting" @click="submitAttendance">
               {{ isAttendanceSubmitting ? 'Menyimpan...' : 'Simpan' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="showTargetModal" class="modal-overlay" @click.self="closeTargetModal">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h2>{{ targetForm.id ? 'Edit Production Target' : 'Tambah Production Target' }}</h2>
+            <button class="modal-close" @click="closeTargetModal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="targetError" class="error-message">{{ targetError }}</div>
+
+            <div class="form-group">
+              <label>Position</label>
+              <select v-model="targetForm.position_id" @change="loadTargetSubPositions" class="filter-input">
+                <option value="" disabled>Pilih Position</option>
+                <option v-for="pos in positions" :key="pos.id" :value="pos.id">
+                  {{ pos.code }} - {{ pos.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group" v-if="targetSubPositions.length > 0">
+              <label>Sub Position (Opsional)</label>
+              <select v-model="targetForm.sub_position_id" class="filter-input">
+                <option value="">Tanpa Sub Position</option>
+                <option v-for="sp in targetSubPositions" :key="sp.id" :value="sp.id">
+                  {{ sp.code }} - {{ sp.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label>Target</label>
+              <input type="number" v-model="targetForm.target" class="filter-input" min="0" step="0.01" placeholder="Masukkan target" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-back" @click="closeTargetModal">Batal</button>
+            <button class="btn-approve" :disabled="isTargetSubmitting" @click="submitTarget">
+              {{ isTargetSubmitting ? 'Menyimpan...' : 'Simpan' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="showProductionLogModal" class="modal-overlay" @click.self="closeProductionLogModal">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h2>{{ productionLogForm.id ? 'Edit Production Log' : 'Tambah Production Log' }}</h2>
+            <button class="modal-close" @click="closeProductionLogModal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="productionLogError" class="error-message">{{ productionLogError }}</div>
+
+            <div class="form-group">
+              <label>Worker</label>
+              <select v-model="productionLogForm.worker_id" class="filter-input">
+                <option value="" disabled>Pilih Worker</option>
+                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Position</label>
+              <select v-model="productionLogForm.position_id" @change="loadProductionLogSubPositions" class="filter-input">
+                <option value="" disabled>Pilih Position</option>
+                <option v-for="pos in positions" :key="pos.id" :value="pos.id">
+                  {{ pos.code }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group" v-if="productionLogSubPositions.length > 0">
+              <label>Sub Position</label>
+              <select v-model="productionLogForm.sub_position_id" class="filter-input">
+                <option value="" disabled>Pilih Sub Position</option>
+                <option v-for="sp in productionLogSubPositions" :key="sp.id" :value="sp.id">
+                  {{ sp.code }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Shift</label>
+              <select v-model="productionLogForm.shift_id" class="filter-input">
+                <option value="" disabled>Pilih Shift</option>
+                <option v-for="s in shifts" :key="s.id" :value="s.id">
+                  {{ s.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Supplier (Opsional)</label>
+              <select v-model="productionLogForm.supplier_id" class="filter-input">
+                <option value="">Tanpa Supplier</option>
+                <option v-for="sup in suppliers" :key="sup.id" :value="sup.id">
+                  {{ sup.name }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Item</label>
+              <input
+                type="text"
+                v-model="productionLogItemNumberInput"
+                list="production-log-items"
+                class="filter-input"
+                placeholder="Ketik item number"
+                @blur="syncProductionLogItemByItemNumber"
+              />
+              <datalist id="production-log-items">
+                <option v-for="i in items" :key="i.id" :value="i.item_number">{{ getItemLabel(i) }}</option>
+              </datalist>
+            </div>
+
+            <div class="form-group">
+              <label>Qty Output</label>
+              <input type="number" v-model="productionLogForm.qty_output" class="filter-input" min="0" placeholder="0" />
+            </div>
+
+            <div class="form-group">
+              <label>Qty Reject</label>
+              <input type="number" v-model="productionLogForm.qty_reject" class="filter-input" min="0" placeholder="0" />
+            </div>
+
+            <div class="form-group">
+              <label>Durasi Problem (Menit) (Opsional)</label>
+              <input type="number" v-model="productionLogForm.problem_duration_minutes" class="filter-input" min="0" placeholder="Opsional" />
+            </div>
+
+            <div class="form-group full-width">
+              <label>Problem Comment (Opsional)</label>
+              <input type="text" v-model="productionLogProblemSearch" class="filter-input" placeholder="Cari problem comment" />
+              <div style="margin-top: 0.75rem; border: 1px solid #e9ecef; border-radius: 10px; padding: 0.75rem; max-height: 180px; overflow-y: auto;">
+                <label v-for="pc in filteredProblemComments" :key="pc.id" style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+                  <input type="checkbox" v-model="productionLogSelectedProblemCommentIds" :value="pc.id" />
+                  <span>{{ pc.description }}</span>
+                </label>
+              </div>
+              <div style="display: flex; gap: 0.75rem; align-items: center; margin-top: 0.75rem;">
+                <input type="text" v-model="productionLogManualProblemComment" class="filter-input" placeholder="Buat problem comment baru" />
+                <button class="btn-add" type="button" @click="addManualProblemCommentToSelection">Tambah</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Tanggal</label>
+              <input type="date" v-model="productionLogForm.created_at_date" class="filter-input" />
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-back" @click="closeProductionLogModal">Batal</button>
+            <button class="btn-approve" :disabled="isProductionLogSubmitting" @click="submitProductionLog">
+              {{ isProductionLogSubmitting ? 'Menyimpan...' : 'Simpan' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- Production Plan Modal -->
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="showProductionPlanModal" class="modal-overlay" @click.self="closeProductionPlanModal">
+        <div class="modal-container">
+          <div class="modal-header">
+            <h2>{{ productionPlanForm.id ? 'Edit Production Plan' : 'Tambah Production Plan' }}</h2>
+            <button class="modal-close" @click="closeProductionPlanModal">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="productionPlanError" class="error-message">{{ productionPlanError }}</div>
+
+            <div class="form-group">
+              <label>Worker</label>
+              <select v-model="productionPlanForm.worker_id" class="filter-input">
+                <option value="" disabled>Pilih Worker</option>
+                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+              </select>
+            </div>
+
+            <div class="form-group full-width" v-if="!productionPlanForm.id">
+              <label>Mode Input</label>
+              <select v-model="productionPlanMode" class="filter-input">
+                <option value="single">Satu-satu</option>
+                <option value="batch">Batch (Banyak Item)</option>
+              </select>
+            </div>
+
+            <template v-if="productionPlanMode === 'single'">
+              <div class="form-group">
+                <label>Item</label>
+                <input
+                  type="text"
+                  v-model="productionPlanItemNumberInput"
+                  list="production-plan-items"
+                  class="filter-input"
+                  placeholder="Ketik item number"
+                  @blur="syncProductionPlanItemByItemNumber"
+                />
+                <datalist id="production-plan-items">
+                  <option v-for="i in items" :key="i.id" :value="i.item_number">{{ getItemLabel(i) }}</option>
+                </datalist>
+              </div>
+
+              <div class="form-group">
+                <label>Shift</label>
+                <select v-model="productionPlanForm.shift_id" class="filter-input">
+                  <option value="" disabled>Pilih Shift</option>
+                  <option v-for="s in shifts" :key="s.id" :value="s.id">
+                    {{ s.name }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label>Position (Opsional)</label>
+                <select v-model="productionPlanForm.position_id" @change="loadProductionPlanSubPositions" class="filter-input">
+                  <option value="">Tanpa Position</option>
+                  <option v-for="pos in positions" :key="pos.id" :value="pos.id">
+                    {{ pos.code }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group" v-if="productionPlanSubPositions.length > 0">
+                <label>Sub Position (Opsional)</label>
+                <select v-model="productionPlanForm.sub_position_id" class="filter-input">
+                  <option value="">Tanpa Sub Position</option>
+                  <option v-for="sp in productionPlanSubPositions" :key="sp.id" :value="sp.id">
+                    {{ sp.code }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="form-group full-width">
+                <label>Target</label>
+                <input type="number" v-model="productionPlanForm.target" class="filter-input" placeholder="Contoh: 100" />
+              </div>
+
+              <div class="form-group full-width">
+                <label>Catatan (Opsional)</label>
+                <input type="text" v-model="productionPlanForm.note" class="filter-input" placeholder="Opsional" />
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="form-group full-width" v-for="(row, idx) in productionPlanBatchRows" :key="idx">
+                <div class="filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; background: #f8f9fa; padding: 1rem; border-radius: 8px;">
+                  <div class="filter-group">
+                    <label>Item (Baris {{ idx + 1 }})</label>
+                    <input
+                      type="text"
+                      v-model="row.itemNumberInput"
+                      list="production-plan-items"
+                      class="filter-input"
+                      placeholder="Ketik item number"
+                      @blur="syncProductionPlanItemByItemNumberRow(row)"
+                    />
+                  </div>
+                  <div class="filter-group">
+                    <label>Shift</label>
+                    <select v-model="row.shift_id" class="filter-input">
+                      <option value="" disabled>Pilih Shift</option>
+                      <option v-for="s in shifts" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label>Position</label>
+                    <select v-model="row.position_id" @change="loadProductionPlanSubPositionsRow(row)" class="filter-input">
+                      <option value="">Tanpa Position</option>
+                      <option v-for="pos in positions" :key="pos.id" :value="pos.id">{{ pos.code }}</option>
+                    </select>
+                  </div>
+                  <div class="filter-group" v-if="row.subPositions && row.subPositions.length > 0">
+                    <label>Sub Position</label>
+                    <select v-model="row.sub_position_id" class="filter-input">
+                      <option value="">Tanpa Sub Position</option>
+                      <option v-for="sp in row.subPositions" :key="sp.id" :value="sp.id">{{ sp.code }}</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label>Target</label>
+                    <input type="number" v-model="row.target" class="filter-input" placeholder="Target" />
+                  </div>
+                  <div class="filter-group">
+                    <label>Catatan</label>
+                    <input type="text" v-model="row.note" class="filter-input" placeholder="Catatan" />
+                  </div>
+                  <div class="filter-group" style="align-self: end;" v-if="productionPlanBatchRows.length > 1">
+                    <button class="btn-delete" type="button" @click="removeProductionPlanRow(idx)">Hapus</button>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group full-width">
+                <button class="btn-add" type="button" @click="addProductionPlanRow">+ Tambah Item</button>
+              </div>
+            </template>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn-back" @click="closeProductionPlanModal">Batal</button>
+            <button class="btn-approve" :disabled="isProductionPlanSubmitting" @click="submitProductionPlan">
+              {{ isProductionPlanSubmitting ? 'Menyimpan...' : 'Simpan' }}
             </button>
           </div>
         </div>
@@ -981,7 +2173,7 @@ onMounted(async () => {
 
 .data-table th {
   background: #f8f9fa;
-  padding: 1rem;
+  /* padding: 1rem; */
   text-align: left;
   font-weight: 600;
   color: #333b5f;
@@ -1121,7 +2313,7 @@ onMounted(async () => {
 }
 
 .error-message {
-  padding: 1rem;
+  /* padding: 1rem; */
   background: #f8d7da;
   color: #721c24;
   border-radius: 8px;
@@ -1129,81 +2321,37 @@ onMounted(async () => {
 }
 
 /* Responsive Design */
+
+/* Tablet & Mobile (Table Card View) - Covers 1024px and below */
 @media (max-width: 1024px) {
   .page-container {
-    padding: 1.5rem;
-  }
-
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-
-  .header-actions {
-    width: 100%;
-    justify-content: flex-end;
+    /* padding: 1rem; */
   }
 
   .filters-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
 
-  .data-table {
-    font-size: 0.85rem;
+  /* Responsive Modals for Tablet */
+  .modal-container {
+    width: 85%;
+    max-width: 600px;
+    margin: 0 auto;
+    max-height: 90vh;
   }
 
-  .data-table th,
-  .data-table td {
-    padding: 0.625rem 0.75rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .page-container {
-    padding: 1rem;
-  }
-
-  .page-header h1 {
-    font-size: 1.5rem;
-  }
-
-  .coordinator-name {
-    font-size: 0.8125rem;
-  }
-
-  .header-actions {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .btn-logout,
-  .btn-back {
-    width: 100%;
-  }
-
-  .filters-section {
-    padding: 1rem;
-  }
-
-  .filters-section h3 {
-    font-size: 1.1rem;
-  }
-
-  .filters-grid {
+  .modal-container:not(.detail-modal) .modal-body {
     grid-template-columns: 1fr;
+    /* padding: 1rem; */
     gap: 0.75rem;
   }
 
-  .btn-clear {
-    width: 100%;
-    margin-top: 0.5rem;
-  }
-
+  /* Table Card View */
   .data-table {
     display: block;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
   }
 
   .data-table thead {
@@ -1212,60 +2360,123 @@ onMounted(async () => {
 
   .data-table tbody {
     display: block;
+    width: 100%;
   }
 
   .data-table tr {
     display: block;
-    margin-bottom: 1rem;
-    border: 1px solid #e9ecef;
-    border-radius: 8px;
-    padding: 0.75rem;
     background: white;
+    margin-bottom: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
   }
 
   .data-table td {
     display: flex;
     justify-content: space-between;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid #f0f0f0;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f3f4f6;
     text-align: right;
-  }
-
-  .data-table td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    color: #333b5f;
-    text-align: left;
-    flex: 1;
-    margin-right: 1rem;
-  }
-
-  .data-table td.num::before {
-    text-align: left;
+    min-height: 3rem;
   }
 
   .data-table td:last-child {
     border-bottom: none;
   }
 
-  .actions {
+  .data-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6b7280;
+    font-size: 0.85rem;
+    text-align: left;
+    margin-right: 1rem;
+    flex: 1;
+  }
+
+  /* Specific styling for Actions cell in card view */
+  .data-table td.actions {
     flex-direction: column;
+    align-items: stretch;
     gap: 0.5rem;
+    /* padding: 1rem; */
+    background: #f9fafb;
+    margin-top: 0.5rem;
+  }
+  
+  .data-table td.actions::before {
+    margin-bottom: 0.5rem;
+    display: block;
+    width: 100%;
   }
 
   .btn-approve,
-  .btn-edit {
+  .btn-detail,
+  .btn-edit,
+  .btn-delete {
     width: 100%;
+    margin-right: 0;
+    justify-content: center;
+    padding: 0.75rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 0.75rem;
+  }
+
+  .btn-logout,
+  .btn-back {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Responsive Tab Buttons */
+  .tab-buttons {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .tab-btn {
+    width: 100%;
+    text-align: center;
+    padding: 0.75rem;
+  }
+
+  .filters-grid {
+    grid-template-columns: 1fr !important;
   }
 }
 
 @media (max-width: 480px) {
   .page-container {
-    padding: 0.75rem;
+    padding: 0.5rem;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
   }
 
   .page-header h1 {
     font-size: 1.25rem;
+  }
+  
+  .coordinator-name {
+    width: 100%;
+    text-align: left;
+    margin-bottom: 0.5rem;
   }
 
   .filters-section {
@@ -1273,30 +2484,42 @@ onMounted(async () => {
   }
 
   .filter-input {
-    padding: 0.625rem;
-    font-size: 0.9375rem;
-    width: 100%;
-    box-sizing: border-box;
+    font-size: 16px; /* Prevent zoom on iOS */
+    padding: 0.75rem;
   }
 
   .btn-clear {
-    padding: 0.625rem 1rem;
-    font-size: 0.875rem;
     width: 100%;
     margin-top: 0.5rem;
+    padding: 0.75rem;
   }
-
-  .filters-grid {
-    gap: 0.5rem;
+  
+  /* Ensure cards take full width with no horizontal scroll */
+  .data-table tr {
+    margin-bottom: 0.75rem;
+    border-radius: 8px;
   }
-
+  
   .data-table td {
-    font-size: 0.8125rem;
+    padding: 0.75rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
   }
-
-  .badge {
-    font-size: 0.6875rem;
-    padding: 0.2rem 0.5rem;
+  
+  .data-table td::before {
+    margin-bottom: 0.25rem;
+    color: #6b7280;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  .data-table td.actions {
+    padding: 0.75rem;
+    background: #f9fafb;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 }
 
@@ -1312,7 +2535,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  padding: 1rem;
+  /* padding: 1rem; */
 }
 
 .modal-container {
@@ -1326,6 +2549,56 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   animation: zoomIn 0.3s ease-out;
+}
+
+.modal-header {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e9ecef;
+  background: #f8f9fa;
+  color: #333b5f;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.modal-container:not(.detail-modal) .modal-close {
+  color: #333b5f;
+}
+
+.modal-container:not(.detail-modal) .modal-body {
+  padding: 1.25rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.modal-container:not(.detail-modal) .modal-body > .error-message {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #333b5f;
+  font-size: 0.875rem;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
 }
 
 @keyframes zoomIn {
@@ -1370,6 +2643,10 @@ onMounted(async () => {
 
 .modal-close:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.modal-container:not(.detail-modal) .modal-close:hover {
+  background: rgba(51, 59, 95, 0.08);
 }
 
 .detail-body {
@@ -1452,6 +2729,8 @@ onMounted(async () => {
   border-top: 1px solid #e9ecef;
   display: flex;
   justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .btn-close-modal {
@@ -1508,6 +2787,15 @@ onMounted(async () => {
     max-height: 95vh;
   }
 
+  .modal-container:not(.detail-modal) .modal-header {
+    /* padding: 1rem; */
+  }
+
+  .modal-container:not(.detail-modal) .modal-body {
+    /* padding: 1rem; */
+    grid-template-columns: 1fr;
+  }
+
   .detail-grid {
     grid-template-columns: 1fr;
   }
@@ -1523,16 +2811,36 @@ onMounted(async () => {
 
 @media (max-width: 480px) {
   .modal-container {
-    margin: 0.25rem;
+    width: 90%;
+    margin: 0 auto;
     border-radius: 12px;
+    max-height: 85vh; /* Leave some space */
+  }
+
+  /* Side-by-side footer buttons on mobile */
+  .modal-footer {
+    padding: 0.75rem;
+    flex-direction: row;
+    gap: 0.75rem;
+  }
+  
+  .modal-footer > button {
+    flex: 1;
+    margin: 0;
+    width: auto !important; /* Override 100% width from other media queries */
+    padding: 0.75rem 0.5rem;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
 
   .detail-modal .modal-header {
-    padding: 1rem;
+    /* padding: 1rem; */
   }
 
   .detail-modal .modal-header h2 {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
   }
 
   .detail-body {
@@ -1540,7 +2848,7 @@ onMounted(async () => {
   }
 
   .detail-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   .btn-detail {
@@ -1551,6 +2859,16 @@ onMounted(async () => {
 
   .actions {
     flex-direction: column;
+  }
+  
+  /* Improve input spacing on mobile */
+  .form-group {
+    gap: 0.25rem;
+    margin-bottom: 0.25rem;
+  }
+  
+  .filter-input {
+    padding: 0.65rem;
   }
 }
 </style>

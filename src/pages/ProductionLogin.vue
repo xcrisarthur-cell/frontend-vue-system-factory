@@ -66,6 +66,10 @@ const goToProductionLogs = async () => {
   router.push(`/production-logs?worker_id=${worker.id}`)
 }
 
+const goToProductionPlans = () => {
+  router.push('/production-plans-view')
+}
+
 
 // Watch positionId untuk logging
 watch(positionId, (newPositionId) => {
@@ -265,6 +269,16 @@ const goBack = () => {
   <span v-if="isLoading">Memuat...</span>
   <span v-else>Log Data</span>
   </button>
+
+  <button
+    type="button"
+    class="plan-button"
+    :disabled="isLoading"
+    @click="goToProductionPlans"
+  >
+    <span v-if="isLoading">Memuat...</span>
+    <span v-else>Rencana Produksi</span>
+  </button>
 </div>
 
       </form>
@@ -302,6 +316,7 @@ const goBack = () => {
 .action-buttons {
   display: flex;
   gap: 0.75rem;
+  flex-direction: column;
 }
 
 /* .edit-button {
@@ -350,6 +365,42 @@ const goBack = () => {
 }
 
 .edit-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  background: #beceea;
+  color: #666;
+  box-shadow: none;
+}
+
+.plan-button {
+  width: 100%;
+  padding: 1.125rem;
+  margin-top: 0.5rem;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+  letter-spacing: 0.3px;
+}
+
+.plan-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+  background: #2563eb;
+}
+
+.plan-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
+}
+
+.plan-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;

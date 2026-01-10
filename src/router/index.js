@@ -13,10 +13,13 @@ import ProductionInput from '../pages/ProductionInput.vue'
 import ProductionLogs from '../pages/ProductionLogs.vue'
 import ProductionLogsEdit from '../pages/ProductionLogsEdit.vue'
 import ProductionTargetForm from '../pages/ProductionTargetForm.vue'
+import ProductionTargetsList from '../pages/ProductionTargetsList.vue'
 import AttendanceForm from '../pages/AttendanceForm.vue'
+import AttendancesList from '../pages/AttendancesList.vue'
 import ProductionDashboard from '../pages/ProductionDashboard.vue'
 import MasterData from '../pages/MasterData.vue'
 import MasterDataLogin from '../pages/MasterDataLogin.vue'
+import ProductionPlansView from '../pages/ProductionPlansView.vue'
 
 // Master Data - Divisions
 import DivisionsList from '../pages/DivisionsList.vue'
@@ -54,6 +57,9 @@ import ItemForm from '../pages/ItemForm.vue'
 import ProblemCommentsList from '../pages/ProblemCommentsList.vue'
 import ProblemCommentForm from '../pages/ProblemCommentForm.vue'
 
+// IT Dashboard
+import ITDashboard from '../pages/ITDashboard.vue'
+
 const routes = [
   { path: '/', component: HomePage },
   { path: '/production-menu', component: ProductionMenu },
@@ -62,6 +68,7 @@ const routes = [
   { path: '/production-login', component: ProductionLogin },
   { path: '/ProductionLogin', component: ProductionLogin }, // Backward compatibility
   { path: '/production-operator', component: ProductionLogin },
+  { path: '/production-plans-view', component: ProductionPlansView },
   { path: '/coordinator-login', component: CoordinatorLogin },
   { path: '/production-coordinator', component: ProductionCoordinator },
   { path: '/ProductionKoordinator', component: ProductionKoordinator }, // Backward compatibility
@@ -79,10 +86,12 @@ const routes = [
   { path: '/ProductionLogsEdit', component: ProductionLogsEdit }, // Keep for backward compatibility
 
   // Production Targets
+  { path: '/production-targets', component: ProductionTargetsList },
   { path: '/production-targets/create', component: ProductionTargetForm },
   { path: '/production-targets/:id/edit', component: ProductionTargetForm },
   
   // Attendances
+  { path: '/attendances', component: AttendancesList },
   { path: '/attendances/create', component: AttendanceForm },
   { path: '/attendances/:id/edit', component: AttendanceForm },
   
@@ -135,6 +144,9 @@ const routes = [
   { path: '/problem-comments/create', component: ProblemCommentForm },
   { path: '/problem-comments/:id/edit', component: ProblemCommentForm },
   
+  // IT Dashboard
+  { path: '/it-dashboard', component: ITDashboard },
+
   { path: '/pajak', component: HomePage }, // Placeholder - bisa diganti dengan halaman pajak nanti
   { path: '/pilihan3', component: HomePage }, // Placeholder - bisa diganti dengan halaman pilihan3 nanti
   { path: '/pilihan4', component: HomePage } // Placeholder - bisa diganti dengan halaman pilihan4 nanti

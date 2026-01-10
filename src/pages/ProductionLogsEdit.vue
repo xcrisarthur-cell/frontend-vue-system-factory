@@ -149,7 +149,9 @@ const submit = async () => {
       const from = route.query.from
       const workerId = route.query.worker_id
       
-      if (from === 'coordinator') {
+      if (from === 'master-data') {
+        router.push('/production-logs?from=master-data')
+      } else if (from === 'coordinator') {
         router.push('/production-coordinator')
       } else if (from === 'admin-produksi') {
         router.push('/production-admin-produksi')
@@ -159,8 +161,31 @@ const submit = async () => {
         router.push('/production-logs')
       }
     } else {
-      await modal.showInfo('Mode create belum diimplementasikan. Silakan gunakan Production Input untuk membuat production log baru.')
-      return
+      const createData = {
+        worker_id: Number(form.value.worker_id),
+        position_id: Number(form.value.position_id),
+        sub_position_id: form.value.sub_position_id ? Number(form.value.sub_position_id) : null,
+        shift_id: Number(form.value.shift_id),
+        supplier_id: form.value.supplier_id ? Number(form.value.supplier_id) : null,
+        item_id: Number(form.value.item_id),
+        qty_output: Number(form.value.qty_output),
+        qty_reject: Number(form.value.qty_reject),
+        problem_duration_minutes: form.value.problem_duration_minutes ? Number(form.value.problem_duration_minutes) : null
+      }
+
+      await productionLogsApi.create(createData)
+      await modal.showSuccess('Production log berhasil dibuat')
+
+      const from = route.query.from
+      if (from === 'master-data') {
+        router.push('/production-logs?from=master-data')
+      } else if (from === 'coordinator') {
+        router.push('/production-coordinator')
+      } else if (from === 'admin-produksi') {
+        router.push('/production-admin-produksi')
+      } else {
+        router.push('/production-logs')
+      }
     }
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal menyimpan production log'
@@ -175,7 +200,9 @@ const goBack = () => {
   const from = route.query.from
   const workerId = route.query.worker_id
   
-  if (from === 'coordinator') {
+  if (from === 'master-data') {
+    router.push('/production-logs?from=master-data')
+  } else if (from === 'coordinator') {
     router.push('/production-coordinator')
   } else if (from === 'admin-produksi') {
     router.push('/production-admin-produksi')

@@ -1,27 +1,74 @@
 <script setup>
 import { useRouter } from 'vue-router'
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useMasterDataSessionStore } from '../store/masterDataSession'
 import { modal } from '../plugins/modal'
+import { divisionsApi } from '../api/divisions'
+import { departmentsApi } from '../api/departments'
+import { positionsApi } from '../api/positions'
+import { subPositionsApi } from '../api/subPositions'
+import { workersApi } from '../api/workers'
+import { shiftsApi } from '../api/shifts'
+import { suppliersApi } from '../api/suppliers'
+import { itemsApi } from '../api/items'
+import { problemCommentsApi } from '../api/problemComments'
+import { productionLogsApi } from '../api/productionLogs'
+import api from '../api/http'
+
+const productionTargetsApi = {
+  getAll: () => api.get('/production-targets')
+}
+
+const attendancesApi = {
+  getAll: () => api.get('/attendances')
+}
+
+const productionPlansApi = {
+  getAll: () => api.get('/production-plans')
+}
 
 const router = useRouter()
 const masterDataSession = useMasterDataSessionStore()
+const isLoading = ref(false)
 
-const menuItems = [
-  { title: 'Divisions', path: '/divisions', icon: '🏢' },
-  { title: 'Departments', path: '/departments', icon: '🏛️' },
-  { title: 'Positions', path: '/positions', icon: '💼' },
-  { title: 'Sub Positions', path: '/sub-positions', icon: '📋' },
-  { title: 'Workers', path: '/workers', icon: '👥' },
-  { title: 'Shifts', path: '/shifts', icon: '⏰' },
-  { title: 'Suppliers', path: '/suppliers', icon: '🚚' },
-  { title: 'Items', path: '/items', icon: '📦' },
-  { title: 'Problem Comments', path: '/problem-comments', icon: '⚠️' },
-  { title: 'Production Logs', path: '/production-logs', icon: '📊' }
-]
+const menuItems = ref([
+  { title: 'Divisions', path: '/divisions', icon: '🏢', count: null, api: divisionsApi },
+  { title: 'Departments', path: '/departments', icon: '🏛️', count: null, api: departmentsApi },
+  { title: 'Positions', path: '/positions', icon: '💼', count: null, api: positionsApi },
+  { title: 'Sub Positions', path: '/sub-positions', icon: '📋', count: null, api: subPositionsApi },
+  { title: 'Workers', path: '/workers', icon: '👥', count: null, api: workersApi },
+  { title: 'Shifts', path: '/shifts', icon: '⏰', count: null, api: shiftsApi },
+  { title: 'Suppliers', path: '/suppliers', icon: '🚚', count: null, api: suppliersApi },
+  { title: 'Items', path: '/items', icon: '📦', count: null, api: itemsApi },
+  { title: 'Production Plans', path: '/production-plans-view?from=master-data', icon: '🗓️', count: null, api: productionPlansApi },
+  { title: 'Production Targets', path: '/production-targets', icon: '🎯', count: null, api: productionTargetsApi },
+  { title: 'Attendances', path: '/attendances', icon: '📅', count: null, api: attendancesApi },
+  { title: 'Problem Comments', path: '/problem-comments', icon: '⚠️', count: null, api: problemCommentsApi },
+  { title: 'Production Logs', path: '/production-logs?from=master-data', icon: '📊', count: null, api: productionLogsApi }
+])
 
 const navigateTo = (path) => {
   router.push(path)
+}
+
+const fetchCounts = async () => {
+  isLoading.value = true
+  const promises = menuItems.value.map(async (item) => {
+    try {
+      if (item.api && item.api.getAll) {
+        const response = await item.api.getAll()
+        // Handle both array response and object response with data property
+        const data = Array.isArray(response) ? response : (response.data || [])
+        item.count = Array.isArray(data) ? data.length : 0
+      }
+    } catch (error) {
+      console.error(`Failed to fetch count for ${item.title}:`, error)
+      item.count = '-'
+    }
+  })
+  
+  await Promise.allSettled(promises)
+  isLoading.value = false
 }
 
 onMounted(async () => {
@@ -31,13 +78,18 @@ onMounted(async () => {
     router.push('/master-data-login')
     return
   }
+  
+  fetchCounts()
 })
 </script>
 
 <template>
   <div class="page-container">
     <div class="page-header">
-      <h1>Master Data Management</h1>
+      <div>
+        <h1>Master Data Management</h1>
+        <p class="subtitle">Kelola seluruh data referensi sistem</p>
+      </div>
       <button class="btn-back" @click="router.push('/')">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M19 12H5M12 19l-7-7 7-7"/>
@@ -56,6 +108,12 @@ onMounted(async () => {
         <div class="menu-icon">{{ item.icon }}</div>
         <div class="menu-content">
           <h3>{{ item.title }}</h3>
+          <div class="menu-meta" v-if="item.api && item.count !== null">
+            <span class="count-badge" :class="{ 'error': item.count === '-' }">
+              {{ item.count === '-' ? 'Error' : `${item.count} Data` }}
+            </span>
+          </div>
+          <div class="menu-meta skeleton" v-else-if="item.api && item.count === null"></div>
         </div>
         <div class="menu-arrow">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -166,6 +224,46 @@ onMounted(async () => {
   font-weight: 600;
   color: #333b5f;
   letter-spacing: 0.2px;
+}
+
+.subtitle {
+  margin: 0.25rem 0 0 0;
+  color: #666;
+  font-size: 1rem;
+}
+
+.menu-meta {
+  margin-top: 0.5rem;
+  height: 24px;
+}
+
+.count-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.count-badge.error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.skeleton {
+  width: 60px;
+  height: 24px;
+  background: #f0f0f0;
+  border-radius: 12px;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 
 .menu-arrow {

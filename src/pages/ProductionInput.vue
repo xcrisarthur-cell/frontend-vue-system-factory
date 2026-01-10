@@ -25,9 +25,26 @@ const qtyReject = ref('')
 const selectedCommentIds = ref([])
 const manualComment = ref('')
 const problemMinutes = ref('')
+const createdAtDate = ref('')
 
 const isSubmitting = ref(false)
 const isLoading = ref(false)
+
+const getTodayLocalISODate = () => {
+  const d = new Date()
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+const buildCreatedAt = (dateStr) => {
+  const now = new Date()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mi = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  return `${dateStr}T${hh}:${mi}:${ss}`
+}
 
 // Error states untuk validasi
 const errors = ref({
@@ -61,6 +78,7 @@ onMounted(async () => {
     comments.value = commentRes.data
     productionTargets.value = targetRes.data
     
+    createdAtDate.value = getTodayLocalISODate()
   } catch (error) {
     console.error('Error loading data:', error)
     await modal.showError('Gagal memuat data. Silakan refresh halaman.')
@@ -246,7 +264,8 @@ const submit = async () => {
       qty_output: Number(qtyOutput.value || 0),
       qty_reject: Number(qtyReject.value || 0),
       problem_comment_ids: finalCommentIds.length > 0 ? finalCommentIds : null,
-      problem_duration_minutes: Number(problemMinutes.value || 0) || null
+      problem_duration_minutes: Number(problemMinutes.value || 0) || null,
+      created_at: buildCreatedAt(createdAtDate.value)
     })
 
     await modal.showSuccess('Data produksi berhasil disimpan')
@@ -261,6 +280,7 @@ const submit = async () => {
     selectedCommentIds.value = []
     manualComment.value = ''
     problemMinutes.value = ''
+    createdAtDate.value = getTodayLocalISODate()
     
     // Reset errors
     errors.value = {
@@ -392,6 +412,20 @@ const logout = async () => {
               </select>
               <span v-if="errors.supplierId" class="error-message">{{ errors.supplierId }}</span>
             </div>
+          </div>
+
+          <div class="form-group">
+            <label for="createdAt">
+              created_at <span class="required-star">*</span>
+            </label>
+            <input
+              id="createdAt"
+              v-model="createdAtDate"
+              type="date"
+              required
+              :disabled="isLoading"
+              class="form-input"
+            />
           </div>
 
           <div class="form-group">
