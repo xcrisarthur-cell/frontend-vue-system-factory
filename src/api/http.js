@@ -10,7 +10,7 @@ if (!API_URL && import.meta.env.PROD) {
 
 // Fallback for local development if not set
 if (!API_URL) {
-  API_URL = 'http://103.164.99.2:1101'
+  API_URL = 'http://localhost:8000'
 }
 
 const ENV = import.meta.env.VITE_ENV || 'production'
