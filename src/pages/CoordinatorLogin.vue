@@ -20,8 +20,8 @@ const fetchCoordinators = async () => {
   error.value = null
   try {
     const res = await api.get('/workers')
-    // Filter hanya workers dengan department.name = 2 (Koordinator)
-    workers.value = res.data.filter(worker => worker.department.name === 'Koordinator')
+    // Filter hanya workers dengan department.name = 2 (Coordinator)
+    workers.value = res.data.filter(worker => worker.department.name === 'Coordinator')
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data coordinator'
     console.error('Error fetching coordinators:', err)
@@ -67,7 +67,7 @@ onMounted(() => {
   <div class="login-container">
     <div class="login-card">
       <div class="login-header">
-        <h2>Login Koordinator</h2>
+        <h2>Login Coordinator</h2>
         <p class="subtitle">Pilih nama coordinator dan masukkan password</p>
       </div>
 
@@ -75,7 +75,7 @@ onMounted(() => {
 
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
-          <label for="coordinator">Nama Koordinator</label>
+          <label for="coordinator">Nama Coordinator</label>
           <select
             id="coordinator"
             v-model="selectedWorkerId"
@@ -84,7 +84,7 @@ onMounted(() => {
             required
           >
             <option disabled value="">
-              {{ isLoading ? 'Memuat...' : (workers.length === 0 ? 'Tidak ada coordinator' : 'Pilih Koordinator') }}
+              {{ isLoading ? 'Memuat...' : (workers.length === 0 ? 'Tidak ada Coordinator' : 'Pilih Coordinator') }}
             </option>
             <option
               v-for="worker in workers"
@@ -103,7 +103,8 @@ onMounted(() => {
             v-model="password"
             type="password"
             class="form-input"
-            placeholder="Masukkan password"
+            :disabled="!selectedWorkerId || isLoading || isSubmitting"
+            :placeholder="!selectedWorkerId ? 'Pilih Coordinator Terlebih Dahulu' : 'Masukkan password'"
             required
           />
         </div>

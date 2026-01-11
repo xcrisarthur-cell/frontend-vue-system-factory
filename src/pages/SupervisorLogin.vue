@@ -105,6 +105,7 @@ onMounted(() => {
             class="form-input"
             placeholder="Masukkan password"
             required
+            :disabled="!selectedWorkerId"
           />
         </div>
 

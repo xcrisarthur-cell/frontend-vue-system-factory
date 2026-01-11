@@ -449,14 +449,14 @@ onMounted(async () => {
       <thead>
         <tr>
           <th>ID</th>
-          <th>Worker</th>
-          <th>Position</th>
-          <th>Sub Position</th>
-          <th>Item</th>
+          <th>Nama</th>
+          <th>Posisi</th>
+          <th>Mesin</th>
+          <th>Item / Barang</th>
           <th class="num">Target</th>
           <th>Shift</th>
           <th>Catatan</th>
-          <th>Dibuat</th>
+          <th>Tanggal</th>
           <th>Diperbarui</th>
           <th>Dibuat Oleh</th>
           <th v-if="isMasterDataView">Aksi</th>

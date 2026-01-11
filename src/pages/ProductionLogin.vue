@@ -37,6 +37,14 @@ const filteredWorkers = computed(() => {
   return filtered
 })
 
+const isWorkerDisabled = computed(() => {
+  if (isLoading.value) return true
+  if (!positionId.value) return true
+  if (isLoadingSubPositions.value) return true
+  if (hasSubPositions.value && !subPositionId.value) return true
+  return false
+})
+
 const goToProductionLogs = async () => {
   if (!positionId.value || !workerId.value) {
     await modal.showWarning('Pilih posisi dan nama pekerja terlebih dahulu')
@@ -223,12 +231,12 @@ const goBack = () => {
           <select
             id="worker"
             v-model="workerId"
-            :disabled="isLoading"
+            :disabled="isWorkerDisabled"
             class="form-select"
             required
           >
             <option disabled value="">
-              {{ filteredWorkers.length === 0 ? 'Tidak ada pekerja' : 'Pilih Nama Operator' }}
+              {{ filteredWorkers.length === 0 ? 'Tidak ada pekerja' : (isWorkerDisabled ? 'Pilih Posisi/Mesin Terlebih Dahulu' : 'Pilih Nama Operator') }}
             </option>
             <option
               v-for="w in filteredWorkers"

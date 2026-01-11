@@ -21,7 +21,7 @@ const fetchAdminProduksi = async () => {
   try {
     const res = await api.get('/workers')
     // Filter hanya workers dengan department.name = 4 (Admin Produksi)
-    workers.value = res.data.filter(worker => worker.department.name === 'Admin Produksi')
+    workers.value = res.data.filter(worker => worker.department.name === 'Admin Production')
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data admin produksi'
     console.error('Error fetching admin produksi:', err)
@@ -105,6 +105,7 @@ onMounted(() => {
             class="form-input"
             placeholder="Masukkan password"
             required
+            :disabled="!selectedWorkerId"
           />
         </div>
 

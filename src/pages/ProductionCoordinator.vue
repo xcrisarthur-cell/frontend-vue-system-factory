@@ -4,6 +4,7 @@ import { Teleport, Transition } from 'vue'
 import { useRouter } from 'vue-router'
 import { productionLogsApi } from '../api/productionLogs'
 import { workersApi } from '../api/workers'
+import { departmentsApi } from '../api/departments'
 import api from '../api/http'
 import { useCoordinatorSessionStore } from '../store/coordinatorSession'
 import { modal } from '../plugins/modal'
@@ -53,6 +54,7 @@ const attendanceMode = ref('single')
 const attendanceBatchRows = ref([
   { worker_id: '', status: 'HADIR', date: '', time: '', notes: '' }
 ])
+const attendanceChecklist = ref([])
 const showTargetModal = ref(false)
 const targetForm = ref({
   id: null,
@@ -74,7 +76,8 @@ const productionPlanForm = ref({
   shift_id: '',
   position_id: '',
   sub_position_id: '',
-  note: ''
+  note: '',
+  created_at: ''
 })
 const productionPlanItemNumberInput = ref('')
 const productionPlanSubPositions = ref([])
@@ -122,6 +125,7 @@ const filterSupplierId = ref('')
 const filterItemId = ref('')
 const filterApprovalStatus = ref('')
 const workers = ref([])
+const departments = ref([])
 const shifts = ref([])
 const positions = ref([])
 const subPositions = ref([])
@@ -158,14 +162,15 @@ const fetchData = async () => {
   isLoading.value = true
   error.value = null
   try {
-    const [logsRes, workersRes, shiftsRes, positionsRes, suppliersRes, itemsRes, problemCommentsRes] = await Promise.all([
+    const [logsRes, workersRes, shiftsRes, positionsRes, suppliersRes, itemsRes, problemCommentsRes, departmentsRes] = await Promise.all([
       productionLogsApi.getAll(),
       workersApi.getAll(),
       api.get('/shifts'),
       api.get('/positions'),
       api.get('/suppliers'),
       api.get('/items'),
-      api.get('/problem-comments')
+      api.get('/problem-comments'),
+      departmentsApi.getAll()
     ])
     logs.value = logsRes.data
     workers.value = workersRes.data
@@ -174,6 +179,7 @@ const fetchData = async () => {
     suppliers.value = suppliersRes.data
     items.value = itemsRes.data
     problemComments.value = problemCommentsRes.data
+    departments.value = departmentsRes.data
   } catch (err) {
     error.value = err.response?.data?.detail || 'Gagal memuat data'
     console.error('Error fetching data:', err)
@@ -196,6 +202,12 @@ const loadSubPositions = async () => {
     console.error('Error loading sub positions:', err)
   }
 }
+
+const operatorWorkers = computed(() => {
+  const operatorDept = departments.value.find(d => d.name.toLowerCase() === 'operator')
+  if (!operatorDept) return []
+  return workers.value.filter(w => w.department_id === operatorDept.id)
+})
 
 const filteredLogs = computed(() => {
   let filtered = logs.value
@@ -713,7 +725,8 @@ const addProductionPlanRow = () => {
     target: '',
     note: '',
     itemNumberInput: '',
-    subPositions: []
+    subPositions: [],
+    created_at: getTodayLocalISODate()
   })
 }
 
@@ -775,7 +788,8 @@ const openProductionPlanModal = async (record = null) => {
       shift_id: record.shift_id ?? '',
       position_id: record.position_id ?? '',
       sub_position_id: record.sub_position_id ?? '',
-      note: record.note ?? ''
+      note: record.note ?? '',
+      created_at: toISODateInput(record.created_at)
     }
     productionPlanItemNumberInput.value = record.item?.item_number || ''
     if (productionPlanForm.value.position_id) {
@@ -791,7 +805,8 @@ const openProductionPlanModal = async (record = null) => {
       shift_id: '',
       position_id: '',
       sub_position_id: '',
-      note: ''
+      note: '',
+      created_at: getTodayLocalISODate()
     }
     productionPlanItemNumberInput.value = ''
     productionPlanSubPositions.value = []
@@ -804,7 +819,8 @@ const openProductionPlanModal = async (record = null) => {
       target: '',
       note: '',
       itemNumberInput: '',
-      subPositions: []
+      subPositions: [],
+      created_at: getTodayLocalISODate()
     }]
   }
   showProductionPlanModal.value = true
@@ -846,7 +862,8 @@ const submitProductionPlan = async () => {
             position_id: row.position_id ? Number(row.position_id) : null,
             sub_position_id: row.sub_position_id ? Number(row.sub_position_id) : null,
             note: row.note ? row.note : null,
-            created_by: coordinatorSession.coordinatorId
+            created_by: coordinatorSession.coordinatorId,
+            created_at: row.created_at ? buildCreatedAt(row.created_at) : undefined
         }
         
         await api.post('/production-plans', payload)
@@ -890,7 +907,8 @@ const submitProductionPlan = async () => {
       shift_id: Number(productionPlanForm.value.shift_id),
       position_id: productionPlanForm.value.position_id ? Number(productionPlanForm.value.position_id) : null,
       sub_position_id: productionPlanForm.value.sub_position_id ? Number(productionPlanForm.value.sub_position_id) : null,
-      note: productionPlanForm.value.note ? productionPlanForm.value.note : null
+      note: productionPlanForm.value.note ? productionPlanForm.value.note : null,
+      created_at: productionPlanForm.value.created_at ? buildCreatedAt(productionPlanForm.value.created_at) : undefined
     }
 
     if (productionPlanForm.value.id) {
@@ -944,7 +962,7 @@ const openAttendanceModal = (record = null) => {
       notes: record.notes || ''
     }
   } else {
-    attendanceMode.value = 'single'
+    attendanceMode.value = 'checklist'
     attendanceForm.value = {
       id: null,
       worker_id: '',
@@ -953,7 +971,19 @@ const openAttendanceModal = (record = null) => {
       time: '',
       notes: ''
     }
-    attendanceBatchRows.value = [{ worker_id: '', status: 'HADIR', date: '', time: '', notes: '' }]
+    
+    const today = getTodayLocalISODate()
+    const nowTime = extractTimePart(new Date())
+
+    attendanceChecklist.value = operatorWorkers.value.map(w => ({
+      worker_id: w.id,
+      name: w.name,
+      selected: false,
+      status: 'HADIR',
+      date: today,
+      time: nowTime,
+      notes: ''
+    }))
   }
   showAttendanceModal.value = true
 }
@@ -983,29 +1013,38 @@ const handleEditAttendance = (record) => {
 }
 
 const submitAttendance = async () => {
-  if (!attendanceForm.value.id && attendanceMode.value === 'batch') {
-    const invalidIndex = attendanceBatchRows.value.findIndex(r => !r.worker_id || !r.status || !r.date || !r.time)
-    if (invalidIndex !== -1) {
-      attendanceError.value = `Baris ${invalidIndex + 1}: Worker, Status, Tanggal, dan Waktu wajib diisi`
+  if (!attendanceForm.value.id && attendanceMode.value === 'checklist') {
+    const selectedItems = attendanceChecklist.value.filter(i => i.selected)
+    if (selectedItems.length === 0) {
+      attendanceError.value = 'Pilih setidaknya satu worker'
       return
+    }
+
+    // Validate selected items
+    for (const item of selectedItems) {
+      if (!item.status || !item.date || !item.time) {
+        attendanceError.value = `Data tidak lengkap untuk worker ${item.name}`
+        return
+      }
     }
 
     isAttendanceSubmitting.value = true
     attendanceError.value = null
     try {
-      for (let i = 0; i < attendanceBatchRows.value.length; i += 1) {
-        const r = attendanceBatchRows.value[i]
+      let successCount = 0
+      for (const item of selectedItems) {
         await api.post('/attendances', {
-          worker_id: Number(r.worker_id),
-          status: r.status,
-          date: r.date,
-          time: r.time,
-          notes: r.notes || null,
+          worker_id: Number(item.worker_id),
+          status: item.status,
+          date: item.date,
+          time: item.time,
+          notes: item.notes || null,
           approved_coordinator: true
         })
+        successCount++
       }
       showAttendanceModal.value = false
-      modal.showSuccess(`Berhasil menambah ${attendanceBatchRows.value.length} attendance`)
+      modal.showSuccess(`Berhasil menambah ${successCount} attendance`)
       fetchAttendances()
     } catch (err) {
       attendanceError.value = err.response?.data?.detail || 'Gagal menyimpan attendance'
@@ -1229,10 +1268,11 @@ onMounted(async () => {
       <p>Tidak ada data production logs</p>
     </div>
 
-    <table v-else class="data-table">
-      <thead>
-        <tr>
-          <th>ID</th>
+    <div v-else class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
           <th>Worker</th>
           <th>Position</th>
           <th>Sub Position</th>
@@ -1260,7 +1300,7 @@ onMounted(async () => {
           <td data-label="Tanggal">{{ new Date(log.created_at).toLocaleString('id-ID') }}</td>
           <td data-label="Status">
             <span v-if="log.approved_coordinator" class="badge approved">Approved</span>
-            <span v-else class="badge draft">Pending</span>
+            <span v-else class="badge pending">Pending</span>
           </td>
           <td class="actions" data-label="Aksi">
             <button class="btn-detail" @click="handleShowDetail(log)">Detail Data</button>
@@ -1278,6 +1318,7 @@ onMounted(async () => {
       </tbody>
     </table>
     </div>
+    </div>
 
     <div v-else-if="activeTab === 'targets'">
       <div style="margin-bottom: 1rem; display: flex; justify-content: flex-end;">
@@ -1290,14 +1331,15 @@ onMounted(async () => {
       <div v-else-if="targets.length === 0" class="empty-state">
         <p>Tidak ada data production target</p>
       </div>
-      <table v-else class="data-table">
+      <div v-else class="table-container">
+        <table class="data-table">
         <thead>
           <tr>
             <th>ID</th>
             <th>Position</th>
             <th>Sub Position</th>
             <th>Target</th>
-            <th>Dibuat</th>
+            <th>Tanggal</th>
             <th>Diperbarui</th>
             <th>Aksi</th>
           </tr>
@@ -1317,6 +1359,7 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <div v-else-if="activeTab === 'attendance'">
@@ -1330,7 +1373,8 @@ onMounted(async () => {
       <div v-else-if="attendances.length === 0" class="empty-state">
         <p>Tidak ada data attendance</p>
       </div>
-      <table v-else class="data-table">
+      <div v-else class="table-container">
+        <table class="data-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -1353,11 +1397,11 @@ onMounted(async () => {
             <td data-label="Waktu">{{ a.time }}</td>
             <td data-label="Coordinator">
               <span v-if="a.approved_coordinator" class="badge approved">Approved</span>
-              <span v-else class="badge draft">Pending</span>
+              <span v-else class="badge pending">Pending</span>
             </td>
             <td data-label="Supervisor">
               <span v-if="a.approved_supervisor" class="badge approved">Approved</span>
-              <span v-else class="badge draft">Pending</span>
+              <span v-else class="badge pending">Pending</span>
             </td>
             <td data-label="Catatan">{{ a.notes || '-' }}</td>
             <td class="actions" data-label="Aksi">
@@ -1367,6 +1411,7 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <div v-else-if="activeTab === 'plans'">
@@ -1380,7 +1425,8 @@ onMounted(async () => {
       <div v-else-if="productionPlans.length === 0" class="empty-state">
         <p>Tidak ada data production plan</p>
       </div>
-      <table v-else class="data-table">
+      <div v-else class="table-container">
+        <table class="data-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -1391,7 +1437,7 @@ onMounted(async () => {
             <th>Target</th>
             <th>Shift</th>
             <th>Catatan</th>
-            <th>Dibuat</th>
+            <th>Tanggal</th>
             <th>Diperbarui</th>
             <th>Dibuat Oleh</th>
             <th>Aksi</th>
@@ -1417,6 +1463,7 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 
@@ -1532,7 +1579,7 @@ onMounted(async () => {
                   <span class="detail-label">Status Coordinator:</span>
                   <span class="detail-value">
                     <span v-if="selectedLog.approved_coordinator" class="badge approved">Approved</span>
-                    <span v-else class="badge draft">Pending</span>
+                    <span v-else class="badge pending">Pending</span>
                   </span>
                 </div>
                 <div class="detail-item" v-if="selectedLog.approved_coordinator && selectedLog.approved_coordinator_at">
@@ -1585,20 +1632,13 @@ onMounted(async () => {
           </div>
           <div class="modal-body">
             <div v-if="attendanceError" class="error-message">{{ attendanceError }}</div>
-            <div class="form-group full-width" v-if="!attendanceForm.id">
-              <label>Mode Input</label>
-              <select v-model="attendanceMode" class="filter-input">
-                <option value="single">Satu-satu</option>
-                <option value="batch">Batch</option>
-              </select>
-            </div>
 
             <template v-if="attendanceForm.id || attendanceMode === 'single'">
               <div class="form-group">
                 <label>Worker</label>
                 <select v-model="attendanceForm.worker_id" class="filter-input">
                   <option value="" disabled>Pilih Worker</option>
-                  <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+                  <option v-for="w in operatorWorkers" :key="w.id" :value="w.id">{{ w.name }}</option>
                 </select>
               </div>
               <div class="form-group">
@@ -1625,44 +1665,46 @@ onMounted(async () => {
             </template>
 
             <template v-else>
-              <div class="form-group full-width" v-for="(row, idx) in attendanceBatchRows" :key="idx">
-                <div class="filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem;">
-                  <div class="filter-group">
-                    <label>Worker (Baris {{ idx + 1 }})</label>
-                    <select v-model="row.worker_id" class="filter-input">
-                      <option value="" disabled>Pilih Worker</option>
-                      <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
-                    </select>
+              <div class="checklist-container">
+                <div 
+                  v-for="item in attendanceChecklist" 
+                  :key="item.worker_id" 
+                  class="checklist-item"
+                  :class="{ 'is-selected': item.selected }"
+                >
+                  <div class="checklist-header">
+                    <label class="checkbox-label">
+                      <input type="checkbox" v-model="item.selected">
+                      <span class="worker-name">{{ item.name }}</span>
+                    </label>
                   </div>
-                  <div class="filter-group">
-                    <label>Status</label>
-                    <select v-model="row.status" class="filter-input">
-                      <option value="HADIR">HADIR</option>
-                      <option value="IJIN">IJIN</option>
-                      <option value="CUTI">CUTI</option>
-                      <option value="ALPA">ALPA</option>
-                    </select>
-                  </div>
-                  <div class="filter-group">
-                    <label>Tanggal</label>
-                    <input type="date" v-model="row.date" class="filter-input" />
-                  </div>
-                  <div class="filter-group">
-                    <label>Waktu</label>
-                    <input type="time" v-model="row.time" class="filter-input" />
-                  </div>
-                  <div class="filter-group">
-                    <label>Catatan</label>
-                    <input type="text" v-model="row.notes" class="filter-input" placeholder="Opsional" />
-                  </div>
-                  <div class="filter-group" style="align-self: end;" v-if="attendanceBatchRows.length > 1">
-                    <button class="btn-delete" type="button" @click="removeAttendanceRow(idx)">Hapus Baris</button>
+                  
+                  <div v-if="item.selected" class="checklist-details">
+                    <div class="filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.5rem;">
+                      <div class="filter-group">
+                        <label>Status</label>
+                        <select v-model="item.status" class="filter-input sm">
+                          <option value="HADIR">HADIR</option>
+                          <option value="IJIN">IJIN</option>
+                          <option value="CUTI">CUTI</option>
+                          <option value="ALPA">ALPA</option>
+                        </select>
+                      </div>
+                      <div class="filter-group">
+                        <label>Tanggal</label>
+                        <input type="date" v-model="item.date" class="filter-input sm" />
+                      </div>
+                      <div class="filter-group">
+                        <label>Waktu</label>
+                        <input type="time" v-model="item.time" class="filter-input sm" />
+                      </div>
+                      <div class="filter-group">
+                        <label>Catatan</label>
+                        <input type="text" v-model="item.notes" class="filter-input sm" placeholder="Catatan" />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <div class="form-group full-width">
-                <button class="btn-add" type="button" @click="addAttendanceRow">+ Tambah Baris</button>
               </div>
             </template>
           </div>
@@ -1749,7 +1791,7 @@ onMounted(async () => {
               <label>Worker</label>
               <select v-model="productionLogForm.worker_id" class="filter-input">
                 <option value="" disabled>Pilih Worker</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+                <option v-for="w in operatorWorkers" :key="w.id" :value="w.id">{{ w.name }}</option>
               </select>
             </div>
 
@@ -1875,7 +1917,7 @@ onMounted(async () => {
               <label>Worker</label>
               <select v-model="productionPlanForm.worker_id" class="filter-input">
                 <option value="" disabled>Pilih Worker</option>
-                <option v-for="w in workers" :key="w.id" :value="w.id">{{ w.name }}</option>
+                <option v-for="w in operatorWorkers" :key="w.id" :value="w.id">{{ w.name }}</option>
               </select>
             </div>
 
@@ -1942,6 +1984,11 @@ onMounted(async () => {
                 <label>Catatan (Opsional)</label>
                 <input type="text" v-model="productionPlanForm.note" class="filter-input" placeholder="Opsional" />
               </div>
+
+              <div class="form-group full-width">
+                <label>Tanggal</label>
+                <input type="date" v-model="productionPlanForm.created_at" class="filter-input" />
+              </div>
             </template>
 
             <template v-else>
@@ -1949,14 +1996,19 @@ onMounted(async () => {
                 <div class="filters-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem; background: #f8f9fa; padding: 1rem; border-radius: 8px;">
                   <div class="filter-group">
                     <label>Item (Baris {{ idx + 1 }})</label>
-                    <input
-                      type="text"
-                      v-model="row.itemNumberInput"
-                      list="production-plan-items"
-                      class="filter-input"
-                      placeholder="Ketik item number"
-                      @blur="syncProductionPlanItemByItemNumberRow(row)"
-                    />
+                    <div class="item-input-group">
+                      <input 
+                        type="text" 
+                        v-model="row.itemNumberInput" 
+                        @blur="syncProductionPlanItemByItemNumberRow(row)"
+                        placeholder="Ketik No. Item..."
+                        class="filter-input"
+                        list="production-plan-items-batch"
+                      />
+                      <datalist id="production-plan-items-batch">
+                        <option v-for="i in items" :key="i.id" :value="i.item_number">{{ getItemLabel(i) }}</option>
+                      </datalist>
+                    </div>
                   </div>
                   <div class="filter-group">
                     <label>Shift</label>
@@ -1986,6 +2038,10 @@ onMounted(async () => {
                   <div class="filter-group">
                     <label>Catatan</label>
                     <input type="text" v-model="row.note" class="filter-input" placeholder="Catatan" />
+                  </div>
+                  <div class="filter-group">
+                    <label>Tanggal</label>
+                    <input type="date" v-model="row.created_at" class="filter-input" />
                   </div>
                   <div class="filter-group" style="align-self: end;" v-if="productionPlanBatchRows.length > 1">
                     <button class="btn-delete" type="button" @click="removeProductionPlanRow(idx)">Hapus</button>
@@ -2097,25 +2153,30 @@ onMounted(async () => {
   background: #f8f9fa;
 }
 
+/* Enhanced Filters Section */
 .filters-section {
   background: white;
   padding: 1.5rem;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   margin-bottom: 2rem;
+  border: 1px solid #eef2f6;
 }
 
 .filters-section h3 {
-  margin: 0 0 1rem 0;
+  margin: 0 0 1.5rem 0;
   font-size: 1.25rem;
-  font-weight: 600;
-  color: #333b5f;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .filters-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.25rem;
   align-items: end;
 }
 
@@ -2127,164 +2188,244 @@ onMounted(async () => {
 
 .filter-group label {
   font-weight: 600;
-  color: #333b5f;
+  color: #475569;
   font-size: 0.875rem;
 }
 
 .filter-input {
-  padding: 0.75rem;
-  border: 2px solid #beceea;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  font-size: 1rem;
-  transition: all 0.3s ease;
+  font-size: 0.95rem;
+  color: #1e293b;
+  background-color: #fff;
+  transition: all 0.2s ease;
   width: 100%;
-  box-sizing: border-box;
 }
 
 .filter-input:focus {
   outline: none;
-  border-color: #333b5f;
-  box-shadow: 0 0 0 4px rgba(51, 59, 95, 0.1);
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.filter-input:hover {
+  border-color: #94a3b8;
 }
 
 .btn-clear {
-  padding: 0.75rem 1.5rem;
-  background: #dc3545;
-  color: white;
-  border: none;
+  padding: 0.625rem 1.25rem;
+  background: #fff;
+  color: #ef4444;
+  border: 1px solid #ef4444;
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-clear:hover {
-  background: #c82333;
+  background: #fef2f2;
+}
+
+/* Enhanced Data Table */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border: 1px solid #eef2f6;
+  margin-bottom: 2rem;
+  background: white;
 }
 
 .data-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .data-table th {
-  background: #f8f9fa;
-  /* padding: 1rem; */
+  background: #f8fafc;
+  padding: 0.75rem 1rem;
   text-align: left;
   font-weight: 600;
-  color: #333b5f;
-  border-bottom: 2px solid #beceea;
-  font-size: 0.9rem;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 
 .data-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e9ecef;
-  font-size: 0.9rem;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.95rem;
+  color: #334155;
+  vertical-align: middle;
 }
 
-.data-table tr:hover {
-  background: #f8f9fa;
+/* Laptop Responsive Tweak */
+@media (max-width: 1440px) {
+  .data-table th,
+  .data-table td {
+    padding: 0.625rem 0.75rem;
+    font-size: 0.85rem;
+  }
+  
+  .badge {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+  }
+  
+  .btn-action {
+    padding: 0.4rem;
+  }
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tr:hover td {
+  background-color: #f8fafc;
 }
 
 .num {
-  text-align: right;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-weight: 600;
 }
 
 .reject {
-  color: #c0392b;
-  font-weight: 600;
+  color: #ef4444;
 }
 
 .badge {
+  display: inline-flex;
+  align-items: center;
   padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  border-radius: 9999px;
   font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1;
 }
 
 .badge.approved {
-  background: #d4edda;
-  color: #155724;
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
 }
 
 .badge.draft {
-  background: #f8d7da;
-  color: #721c24;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
+.badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+/* Action Buttons */
 .actions {
   display: flex;
   gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.btn-action {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-approve {
   padding: 0.5rem 1rem;
-  background: #28a745;
+  background: #10b981;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
   font-size: 0.875rem;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .btn-approve:hover {
-  background: #218838;
+  background: #059669;
   transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
 }
 
 .btn-edit {
   padding: 0.5rem 1rem;
-  background: #ffc107;
-  color: #000;
+  background: #f59e0b;
+  color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
   font-size: 0.875rem;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .btn-edit:hover {
-  background: #e0a800;
+  background: #d97706;
   transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(245, 158, 11, 0.2);
 }
 
 .btn-delete {
   padding: 0.5rem 1rem;
-  background: #dc3545;
+  background: #ef4444;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   font-weight: 500;
   font-size: 0.875rem;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .btn-delete:hover {
-  background: #c82333;
+  background: #dc2626;
   transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.2);
 }
 
-.btn-approve,
-.btn-detail,
-.btn-edit,
-.btn-delete {
-  margin-right: 0.5rem;
+.btn-detail {
+  padding: 0.5rem 1rem;
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.btn-approve:last-child,
-.btn-detail:last-child,
-.btn-edit:last-child,
-.btn-delete:last-child {
-  margin-right: 0;
+.btn-detail:hover {
+  background: #0284c7;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(14, 165, 233, 0.2);
 }
 
 .btn-add {
@@ -2352,6 +2493,7 @@ onMounted(async () => {
     background: transparent;
     box-shadow: none;
     border-radius: 0;
+    border: none;
   }
 
   .data-table thead {
@@ -2367,9 +2509,9 @@ onMounted(async () => {
     display: block;
     background: white;
     margin-bottom: 1rem;
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    border: 1px solid #eef2f6;
     overflow: hidden;
   }
 
@@ -2377,14 +2519,21 @@ onMounted(async () => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #f3f4f6;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #f1f5f9;
     text-align: right;
-    min-height: 3rem;
+    min-height: 3.5rem;
   }
 
   .data-table td:last-child {
     border-bottom: none;
+  }
+  
+  .table-container {
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    overflow-x: visible;
   }
 
   .data-table td::before {
@@ -2556,9 +2705,10 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #e9ecef;
-  background: #f8f9fa;
-  color: #333b5f;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+  color: #0f172a;
+  border-radius: 16px 16px 0 0;
 }
 
 .modal-header h2 {
@@ -2568,16 +2718,16 @@ onMounted(async () => {
 }
 
 .modal-container:not(.detail-modal) .modal-close {
-  color: #333b5f;
+  color: #64748b;
 }
 
 .modal-container:not(.detail-modal) .modal-body {
-  padding: 1.25rem 1.5rem;
+  padding: 1.5rem;
   overflow-y: auto;
   flex: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .modal-container:not(.detail-modal) .modal-body > .error-message {
@@ -2725,47 +2875,32 @@ onMounted(async () => {
 }
 
 .modal-footer {
-  padding: 1rem 1.5rem;
-  border-top: 1px solid #e9ecef;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid #f1f5f9;
   display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
+  background: #f8fafc;
+  border-radius: 0 0 16px 16px;
 }
 
 .btn-close-modal {
   padding: 0.75rem 1.5rem;
-  background: #333b5f;
+  background: #64748b;
   color: white;
   border: none;
   border-radius: 8px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .btn-close-modal:hover {
-  background: #2a3250;
+  background: #475569;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(51, 59, 95, 0.3);
-}
-
-.btn-detail {
-  padding: 0.5rem 1rem;
-  background: #17a2b8;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 0.875rem;
-  transition: all 0.2s ease;
-  margin-right: 0.5rem;
-}
-
-.btn-detail:hover {
-  background: #138496;
-  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(100, 116, 139, 0.2);
 }
 
 /* Modal Transitions */
@@ -2870,5 +3005,69 @@ onMounted(async () => {
   .filter-input {
     padding: 0.65rem;
   }
+}
+
+.checklist-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  width: 100%;
+  grid-column: 1 / -1;
+}
+
+.checklist-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  transition: all 0.2s;
+  background-color: #fff;
+}
+
+.checklist-item.is-selected {
+  border-color: #3b82f6;
+  background-color: #f0f9ff;
+}
+
+.checklist-header {
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  width: 100%;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  cursor: pointer;
+}
+
+.checklist-details {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0,0,0,0.05);
+  animation: slideDown 0.2s ease-out;
+}
+
+.filter-input.sm {
+  padding: 0.5rem;
+  font-size: 0.9rem;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
