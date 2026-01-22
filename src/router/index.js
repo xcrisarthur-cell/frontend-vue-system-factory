@@ -59,9 +59,11 @@ import ProblemCommentForm from '../pages/ProblemCommentForm.vue'
 
 // IT Dashboard
 import ITDashboard from '../pages/ITDashboard.vue'
+import ServerStatus from '../pages/ServerStatus.vue'
 
 const routes = [
   { path: '/', component: HomePage },
+  { path: '/server-status', component: ServerStatus },
   { path: '/production-menu', component: ProductionMenu },
   { path: '/ProductionMenu', component: ProductionMenu }, // Backward compatibility
   { path: '/production-dashboard', component: ProductionDashboard },
