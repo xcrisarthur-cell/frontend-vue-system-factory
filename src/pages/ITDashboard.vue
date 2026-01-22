@@ -6,7 +6,9 @@ import axios from 'axios'
 const router = useRouter()
 
 // API Configuration
-const API_URL = 'http://103.164.99.2:1101/devices/status'
+// Menggunakan Relative Path '/api/...' agar request ditangani oleh Vercel Serverless Function
+// Ini mengatasi masalah Mixed Content (HTTPS ke HTTP)
+const API_URL = '/api/devices-status'
 
 // Filter states
 const selectedType = ref('ALL')
