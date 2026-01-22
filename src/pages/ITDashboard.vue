@@ -1,33 +1,21 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 
 const router = useRouter()
+
+// API Configuration
+const API_URL = 'http://103.164.99.2:1101/devices/status'
 
 // Filter states
 const selectedType = ref('ALL')
 const selectedLocation = ref('ALL')
+const isLoading = ref(false)
+const lastUpdated = ref('-')
+const autoRefreshTimer = ref(null)
 
-const devices = ref([
-  // DVR BEKASI
-  { id: 1, name: 'DVR CCTV HRD - BEKASI', ip: '103.164.99.2', port: '11011', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 2, name: 'DVR PPIC - BEKASI', ip: '103.164.99.2', port: '11012', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 3, name: 'DVR SECURITY - BEKASI', ip: '103.164.99.2', port: '11013', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 4, name: 'DVR PRODUKSI 1 - BEKASI', ip: '103.164.99.2', port: '11014', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 5, name: 'DVR GUDANG JADI - BEKASI', ip: '103.164.99.2', port: '11015', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 6, name: 'DVR PRODUKSI 2 - BEKASI', ip: '103.164.99.2', port: '11016', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 7, name: 'DVR KAWAT - BEKASI', ip: '103.164.99.2', port: '11017', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 8, name: 'DVR ICU - BEKASI', ip: '103.164.99.2', port: '11018', type: 'DVR', location: 'BEKASI', isOnline: false, isLoading: true, lastCheck: '-' },
-  
-  // DVR BANDUNG (Updated IP)
-  { id: 9, name: 'DVR PRODUKSI - BANDUNG', ip: '36.93.215.10', port: '11021', type: 'DVR', location: 'BANDUNG', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 10, name: 'DVR OFFICE - BANDUNG', ip: '36.93.215.10', port: '11022', type: 'DVR', location: 'BANDUNG', isOnline: false, isLoading: true, lastCheck: '-' },
-  
-  // DVR PEKANBARU
-  { id: 11, name: 'DVR OFFICE - PEKANBARU', ip: '103.183.14.82', port: '11041', type: 'DVR', location: 'PEKANBARU', isOnline: false, isLoading: true, lastCheck: '-' },
-  { id: 12, name: 'DVR PRODUKSI - PEKANBARU', ip: '103.183.14.82', port: '11042', type: 'DVR', location: 'PEKANBARU', isOnline: false, isLoading: true, lastCheck: '-' },
-
-])
+const devices = ref([])
 
 const filteredDevices = computed(() => {
   return devices.value.filter(device => {
@@ -37,63 +25,39 @@ const filteredDevices = computed(() => {
   })
 })
 
-const hasRestrictedPorts = computed(() => {
-  return devices.value.some(d => d.statusText === 'BLOCKED')
-})
-
-const checkSingleStatus = async (device) => {
-  device.isLoading = true
+const fetchDevices = async () => {
+  isLoading.value = true
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    const response = await axios.get(API_URL)
     
-    // Cek apakah port termasuk restricted ports di browser (biasanya 1-1024 kecuali 80/443)
-    const restrictedPorts = [1, 2, 3, 4]
-    const isRestricted = restrictedPorts.includes(Number(device.port))
-    const startTime = performance.now()
-
-    if (isRestricted) {
-       console.warn(`Port ${device.port} mungkin diblokir oleh browser (Unsafe Port).`)
-    }
-
-    await fetch(`http://${device.ip}:${device.port}`, { 
-      mode: 'no-cors', 
-      signal: controller.signal,
-      cache: 'no-store'
+    // Transform API data to dashboard format
+    devices.value = response.data.map((d, index) => {
+      // Determine location from name
+      let location = 'OTHER'
+      const nameUpper = d.name.toUpperCase()
+      if (nameUpper.includes('BEKASI')) location = 'BEKASI'
+      else if (nameUpper.includes('BANDUNG')) location = 'BANDUNG'
+      else if (nameUpper.includes('PEKANBARU')) location = 'PEKANBARU'
+      
+      return {
+        id: index + 1,
+        name: d.name,
+        ip: d.host,
+        port: d.port,
+        type: d.group, // 'Fingerprint' or 'DVR'
+        location: location,
+        isOnline: d.status === 'online',
+        statusText: d.status.toUpperCase(),
+        lastCheck: new Date().toLocaleTimeString()
+      }
     })
-    
-    device.isOnline = true
-    device.statusText = 'ON'
-    clearTimeout(timeoutId)
+    lastUpdated.value = new Date().toLocaleTimeString()
   } catch (err) {
-    const endTime = performance.now()
-    const duration = endTime - startTime
-    
-    // Cek apakah error karena unsafe port (biasanya terjadi sangat cepat < 200ms)
-    const restrictedPorts = [1, 2, 3, 4]
-    const isRestricted = restrictedPorts.includes(Number(device.port))
-
-    if (isRestricted && duration < 200 && err.name !== 'AbortError') {
-       device.isOnline = false
-       device.statusText = 'BLOCKED'
-    } else if (isRestricted) {
-       // Jika error bukan blocked (misal timeout atau connection reset), tapi ini port restricted
-       // Kemungkinan besar port ini bukan HTTP server (Raw TCP)
-       device.isOnline = false
-       device.statusText = 'NOT HTTP?'
-    } else {
-       device.isOnline = false
-       device.statusText = 'OFF'
-    }
+    console.error('Failed to fetch devices:', err)
+    // Optional: Show error toast/notification
   } finally {
-    device.isLoading = false
-    device.lastCheck = new Date().toLocaleTimeString()
+    isLoading.value = false
   }
-}
-
-const checkAllStatus = async () => {
-  const promises = devices.value.map(device => checkSingleStatus(device))
-  await Promise.all(promises)
 }
 
 const goBack = () => {
@@ -101,8 +65,13 @@ const goBack = () => {
 }
 
 onMounted(() => {
-  checkAllStatus()
-  setInterval(checkAllStatus, 30000)
+  fetchDevices()
+  // Auto refresh every 30 seconds
+  autoRefreshTimer.value = setInterval(fetchDevices, 30000)
+})
+
+onUnmounted(() => {
+  if (autoRefreshTimer.value) clearInterval(autoRefreshTimer.value)
 })
 </script>
 
@@ -118,13 +87,13 @@ onMounted(() => {
         </button>
         <h1>IT Dashboard</h1>
       </div>
-      <button class="refresh-button" @click="checkAllStatus">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="refresh-button" @click="fetchDevices" :disabled="isLoading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ 'spin': isLoading }">
           <path d="M23 4v6h-6"></path>
           <path d="M1 20v-6h6"></path>
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
         </svg>
-        Refresh
+        {{ isLoading ? 'Refreshing...' : 'Refresh' }}
       </button>
     </div>
 
@@ -141,6 +110,10 @@ onMounted(() => {
             :class="{ active: selectedType === 'DVR' }" 
             @click="selectedType = 'DVR'"
           >DVR</button>
+          <button 
+            :class="{ active: selectedType === 'Fingerprint' }" 
+            @click="selectedType = 'Fingerprint'"
+          >Fingerprint</button>
         </div>
       </div>
 
@@ -366,6 +339,11 @@ h1 {
   color: #4338ca;
 }
 
+.device-type-badge.fingerprint {
+  background: #fce7f3;
+  color: #be185d;
+}
+
 .card-header h3 {
   margin: 0;
   font-size: 1.1rem;
@@ -403,6 +381,15 @@ h1 {
   border-radius: 50%;
   background-color: currentColor;
   animation: pulse 2s infinite;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes pulse {
