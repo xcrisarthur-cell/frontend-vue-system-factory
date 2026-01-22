@@ -1,13 +1,16 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { getSystemStatus } from '../api/system'
+import { getSystemStatus, getDeviceStatus } from '../api/system'
 
 const router = useRouter()
 const statusData = ref(null)
+const deviceData = ref([])
 const loading = ref(true)
+const loadingDevices = ref(true)
 const error = ref(null)
 let intervalId = null
+let deviceIntervalId = null
 
 const fetchStatus = async () => {
   try {
@@ -22,18 +25,35 @@ const fetchStatus = async () => {
   }
 }
 
+const fetchDevices = async () => {
+  try {
+    const response = await getDeviceStatus()
+    deviceData.value = response.data
+  } catch (err) {
+    console.error('Failed to fetch device status:', err)
+  } finally {
+    loadingDevices.value = false
+  }
+}
+
+const fingerprints = computed(() => deviceData.value.filter(d => d.group === 'Fingerprint'))
+const dvrs = computed(() => deviceData.value.filter(d => d.group === 'DVR'))
+
 const goBack = () => {
   router.push('/')
 }
 
 onMounted(() => {
   fetchStatus()
-  // Refresh every 5 seconds
+  fetchDevices()
+  // Refresh every 5 seconds for system, 10 seconds for devices (to reduce load)
   intervalId = setInterval(fetchStatus, 5000)
+  deviceIntervalId = setInterval(fetchDevices, 10000)
 })
 
 onUnmounted(() => {
   if (intervalId) clearInterval(intervalId)
+  if (deviceIntervalId) clearInterval(deviceIntervalId)
 })
 
 // Helper untuk warna status
@@ -149,6 +169,39 @@ const getUsageColor = (percent) => {
             <div class="service-name">{{ name }}</div>
             <div class="service-badge" :class="getStatusColor(status)">
               {{ status }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Device Monitoring Section -->
+      <div v-if="!loadingDevices" class="services-section">
+        <h2>Device Status Monitor</h2>
+        
+        <!-- Fingerprints -->
+        <h3 class="subsection-title">Fingerprint Machines</h3>
+        <div class="services-grid">
+          <div v-for="device in fingerprints" :key="device.name" class="service-item">
+            <div class="device-info">
+              <div class="service-name">{{ device.name }}</div>
+              <div class="device-detail">{{ device.host }}:{{ device.port }}</div>
+            </div>
+            <div class="service-badge" :class="device.status === 'online' ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'">
+              {{ device.status.toUpperCase() }}
+            </div>
+          </div>
+        </div>
+
+        <!-- DVRs -->
+        <h3 class="subsection-title" style="margin-top: 2rem;">CCTV / DVR Systems</h3>
+        <div class="services-grid">
+          <div v-for="device in dvrs" :key="device.name" class="service-item">
+            <div class="device-info">
+              <div class="service-name">{{ device.name }}</div>
+              <div class="device-detail">{{ device.host }}:{{ device.port }}</div>
+            </div>
+            <div class="service-badge" :class="device.status === 'online' ? 'text-green-600 bg-green-100' : 'text-red-600 bg-red-100'">
+              {{ device.status.toUpperCase() }}
             </div>
           </div>
         </div>
@@ -289,6 +342,24 @@ const getUsageColor = (percent) => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 1rem;
+}
+
+.subsection-title {
+  font-size: 1.1rem;
+  color: #64748b;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.device-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.device-detail {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 0.2rem;
 }
 
 .service-item {
