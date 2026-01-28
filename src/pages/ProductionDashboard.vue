@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { productionLogsApi } from '../api/productionLogs'
 import { workersApi } from '../api/workers'
 import api from '../api/http'
-import { Bar, Line, Scatter } from 'vue-chartjs'
+import { Bar, Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
 
 ChartJS.register(
@@ -34,8 +34,6 @@ const filterShiftId = ref('')
 const filterDateFrom = ref('')
 const filterDateTo = ref('')
 const filterItemId = ref('')
-const dateFilterMode = ref('today')
-const singleDate = ref('')
 const searchQuery = ref('')
 const workerSearchInput = ref('')
 const itemSearchInput = ref('')
@@ -57,27 +55,18 @@ const getTodayDateString = () => {
 }
 
 const selectedDaysCount = computed(() => {
-  if (dateFilterMode.value === 'today') {
-    return 1
+  if (!filterDateFrom.value || !filterDateTo.value) {
+    return 0
   }
-  if (dateFilterMode.value === 'single') {
-    return singleDate.value ? 1 : 0
+  const from = new Date(filterDateFrom.value)
+  const to = new Date(filterDateTo.value)
+  from.setHours(0, 0, 0, 0)
+  to.setHours(0, 0, 0, 0)
+  const diff = to.getTime() - from.getTime()
+  if (diff < 0) {
+    return 0
   }
-  if (dateFilterMode.value === 'range') {
-    if (!filterDateFrom.value || !filterDateTo.value) {
-      return 0
-    }
-    const from = new Date(filterDateFrom.value)
-    const to = new Date(filterDateTo.value)
-    from.setHours(0, 0, 0, 0)
-    to.setHours(0, 0, 0, 0)
-    const diff = to.getTime() - from.getTime()
-    if (diff < 0) {
-      return 0
-    }
-    return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1
-  }
-  return 0
+  return Math.floor(diff / (1000 * 60 * 60 * 24)) + 1
 })
 
 const fetchData = async () => {
@@ -123,39 +112,23 @@ const fetchData = async () => {
 const filteredAndSearchedLogs = computed(() => {
   let filtered = logs.value
 
-  if (dateFilterMode.value === 'today') {
-    const todayStr = getTodayDateString()
-    filtered = filtered.filter(log => {
-      const logDateStr = new Date(log.created_at).toISOString().split('T')[0]
-      return logDateStr === todayStr
-    })
-  } else if (dateFilterMode.value === 'single' && singleDate.value) {
-    const targetDate = new Date(singleDate.value)
-    targetDate.setHours(0, 0, 0, 0)
+  if (filterDateFrom.value) {
+    const fromDate = new Date(filterDateFrom.value)
+    fromDate.setHours(0, 0, 0, 0)
     filtered = filtered.filter(log => {
       const logDate = new Date(log.created_at)
       logDate.setHours(0, 0, 0, 0)
-      return logDate.getTime() === targetDate.getTime()
+      return logDate >= fromDate
     })
-  } else {
-    if (filterDateFrom.value) {
-      const fromDate = new Date(filterDateFrom.value)
-      fromDate.setHours(0, 0, 0, 0)
-      filtered = filtered.filter(log => {
-        const logDate = new Date(log.created_at)
-        logDate.setHours(0, 0, 0, 0)
-        return logDate >= fromDate
-      })
-    }
+  }
 
-    if (filterDateTo.value) {
-      const toDate = new Date(filterDateTo.value)
-      toDate.setHours(23, 59, 59, 999)
-      filtered = filtered.filter(log => {
-        const logDate = new Date(log.created_at)
-        return logDate <= toDate
-      })
-    }
+  if (filterDateTo.value) {
+    const toDate = new Date(filterDateTo.value)
+    toDate.setHours(23, 59, 59, 999)
+    filtered = filtered.filter(log => {
+      const logDate = new Date(log.created_at)
+      return logDate <= toDate
+    })
   }
 
   // Apply filters
@@ -225,8 +198,6 @@ const clearFilters = () => {
   searchQuery.value = ''
   workerSearchInput.value = ''
   itemSearchInput.value = ''
-  dateFilterMode.value = 'today'
-  singleDate.value = today
 }
 
 const syncWorkerFilterBySearch = () => {
@@ -343,45 +314,6 @@ const productionPerWorkerBottom = computed(() => {
   }
 })
 
-// Scatter Data - Productivity vs Reject per Worker
-const workerScatterData = computed(() => {
-  const workerMap = new Map()
-
-  filteredAndSearchedLogs.value.forEach(log => {
-    const workerName = log.worker?.name || 'Unknown'
-    if (!workerMap.has(workerName)) {
-      workerMap.set(workerName, { output: 0, reject: 0 })
-    }
-    const data = workerMap.get(workerName)
-    data.output += parseFloat(log.qty_output) || 0
-    data.reject += parseFloat(log.qty_reject) || 0
-  })
-
-  const points = Array.from(workerMap.entries()).map(([name, data]) => ({
-    x: data.output,
-    y: data.reject,
-    worker: name
-  }))
-
-  return {
-    datasets: [
-      {
-        label: 'Worker',
-        data: points,
-        backgroundColor: points.map(point => {
-          if (point.x === 0 && point.y === 0) {
-            return '#B0BEC5'
-          }
-          if (point.y / (point.x || 1) > 0.1) {
-            return '#FF5722'
-          }
-          return '#2196F3'
-        }),
-        pointRadius: 5
-      }
-    ]
-  }
-})
 
 // Chart Data - Production per Item (using filtered data)
 const productionPerItem = computed(() => {
@@ -497,14 +429,28 @@ const productionPerShift = computed(() => {
 // Chart Data - Production per Date (Last 30 days, using filtered data)
 const productionPerDate = computed(() => {
   const dateMap = new Map()
-  const today = new Date()
   
-  // Initialize last 30 days
-  for (let i = 29; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(date.getDate() - i)
-    const dateStr = date.toISOString().split('T')[0]
-    dateMap.set(dateStr, { output: 0, reject: 0 })
+  let start
+  let end
+
+  if (filterDateFrom.value && filterDateTo.value) {
+    start = new Date(filterDateFrom.value)
+    end = new Date(filterDateTo.value)
+  } else {
+    end = new Date()
+    start = new Date()
+    start.setDate(end.getDate() - 29)
+  }
+  
+  start.setHours(0,0,0,0)
+  end.setHours(0,0,0,0)
+
+  // Create date buckets for the range
+  const loopDate = new Date(start)
+  while (loopDate <= end) {
+    const dateStr = loopDate.toISOString().split('T')[0]
+    dateMap.set(dateStr, { output: 0, reject: 0, details: [] })
+    loopDate.setDate(loopDate.getDate() + 1)
   }
   
   filteredAndSearchedLogs.value.forEach(log => {
@@ -513,6 +459,17 @@ const productionPerDate = computed(() => {
       const data = dateMap.get(logDate)
       data.output += parseFloat(log.qty_output) || 0
       data.reject += parseFloat(log.qty_reject) || 0
+
+      // Collect details
+      const position = log.position?.code || 'Unknown Pos'
+      const subPos = log.sub_position?.code || ''
+      const worker = log.worker?.name || 'Unknown Worker'
+      const item = log.item?.item_name || log.item?.item_number || 'Unknown Item'
+      
+      const detailStr = `${position}${subPos ? '/' + subPos : ''} - ${worker} - ${item}`
+      if (!data.details.includes(detailStr)) {
+        data.details.push(detailStr)
+      }
     }
   })
   
@@ -530,7 +487,8 @@ const productionPerDate = computed(() => {
         backgroundColor: 'rgba(76, 175, 80, 0.1)',
         data: sorted.map(([, data]) => data.output),
         tension: 0.4,
-        fill: true
+        fill: true,
+        details: sorted.map(([, data]) => data.details) // Pass details to dataset
       },
       {
         label: 'Reject',
@@ -538,70 +496,60 @@ const productionPerDate = computed(() => {
         backgroundColor: 'rgba(244, 67, 54, 0.1)',
         data: sorted.map(([, data]) => data.reject),
         tension: 0.4,
-        fill: true
+        fill: true,
+        details: sorted.map(([, data]) => data.details) // Pass details to dataset
       }
     ]
   }
 })
 
-const departmentSummary = computed(() => {
-  if (!departments.value || departments.value.length === 0) {
-    return {
-      chartData: {
-        labels: [],
-        datasets: []
-      },
-      topDepartments: []
-    }
-  }
-
-  const departmentMap = new Map()
-
-  departments.value.forEach(dept => {
-    departmentMap.set(dept.id, {
-      id: dept.id,
-      name: dept.name,
-      output: 0,
-      reject: 0
-    })
-  })
+const dailyProductionDetails = computed(() => {
+  const groups = new Map()
 
   filteredAndSearchedLogs.value.forEach(log => {
-    const departmentId = log.worker?.department_id
-    const dept = departmentMap.get(departmentId)
-    if (!dept) {
-      return
+    const date = new Date(log.created_at).toISOString().split('T')[0]
+    
+    if (!groups.has(date)) {
+      groups.set(date, {
+        date,
+        totalOutput: 0,
+        totalReject: 0,
+        detailMap: new Map()
+      })
     }
-    dept.output += parseFloat(log.qty_output) || 0
-    dept.reject += parseFloat(log.qty_reject) || 0
+    
+    const group = groups.get(date)
+    group.totalOutput += parseFloat(log.qty_output) || 0
+    group.totalReject += parseFloat(log.qty_reject) || 0
+    
+    // Key for aggregation within the day
+    const key = `${log.position_id}-${log.sub_position_id || ''}-${log.worker_id}-${log.item_id}`
+    
+    if (!group.detailMap.has(key)) {
+      group.detailMap.set(key, {
+        position: log.position?.code || '-',
+        subPosition: log.sub_position?.code || '-',
+        worker: log.worker?.name || '-',
+        item: log.item?.item_name || log.item?.item_number || '-',
+        output: 0,
+        reject: 0
+      })
+    }
+    
+    const detail = group.detailMap.get(key)
+    detail.output += parseFloat(log.qty_output) || 0
+    detail.reject += parseFloat(log.qty_reject) || 0
   })
 
-  const aggregated = Array.from(departmentMap.values()).filter(dept => dept.output > 0 || dept.reject > 0)
-
-  const sorted = aggregated.sort((a, b) => b.output - a.output)
-
-  const top = sorted.slice(0, 5)
-
-  const chartData = {
-    labels: top.map(d => d.name),
-    datasets: [
-      {
-        label: 'Output',
-        backgroundColor: '#4CAF50',
-        data: top.map(d => d.output)
-      },
-      {
-        label: 'Reject',
-        backgroundColor: '#f44336',
-        data: top.map(d => d.reject)
-      }
-    ]
-  }
-
-  return {
-    chartData,
-    topDepartments: top
-  }
+  // Convert map to array and sort by date descending
+  return Array.from(groups.values())
+    .map(g => ({
+      ...g,
+      details: Array.from(g.detailMap.values()).sort((a, b) => b.output - a.output),
+      displayDate: new Date(g.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .reverse() // Sort descending (newest first)
 })
 
 const problemSummary = computed(() => {
@@ -684,6 +632,7 @@ const statistics = computed(() => {
     rejectionRate
   }
 })
+
 
 const executiveKpi = computed(() => {
   const totalOutputRaw = filteredAndSearchedLogs.value.reduce((sum, log) => sum + (parseFloat(log.qty_output) || 0), 0)
@@ -1000,88 +949,13 @@ const recentItemProduction = computed(() => {
   }
 })
 
-const problemPareto = computed(() => {
-  const categoryMap = new Map()
-  let totalDuration = 0
-
-  const classify = (description) => {
-    const text = (description || '').toLowerCase()
-    if (!text) return 'Lain-lain'
-    if (text.includes('kawat')) return 'Kawat Nyangkut'
-    if (text.includes('setting')) return 'Setting Mesin'
-    if (text.includes('rusak') || text.includes('trouble') || text.includes('repair')) return 'Mesin Rusak'
-    if (text.includes('operator') || text.includes('human') || text.includes('salah')) return 'Kesalahan Operator'
-    return 'Lain-lain'
-  }
-
-  filteredAndSearchedLogs.value.forEach(log => {
-    const duration = Number(log.problem_duration_minutes) || 0
-    const comments = Array.isArray(log.problem_comments) ? log.problem_comments : []
-
-    if (duration <= 0 || comments.length === 0) {
-      return
-    }
-
-    comments.forEach(comment => {
-      const category = classify(comment.description)
-      if (!categoryMap.has(category)) {
-        categoryMap.set(category, { duration: 0 })
-      }
-      const entry = categoryMap.get(category)
-      entry.duration += duration
-      totalDuration += duration
-    })
-  })
-
-  const entries = Array.from(categoryMap.entries()).sort(
-    (a, b) => b[1].duration - a[1].duration
-  )
-
-  const labels = []
-  const barData = []
-  const lineData = []
-  let cumulative = 0
-
-  entries.forEach(([category, data]) => {
-    labels.push(category)
-    barData.push(data.duration)
-    if (totalDuration > 0) {
-      cumulative += (data.duration / totalDuration) * 100
-    } else {
-      cumulative = 0
-    }
-    lineData.push(Number(cumulative.toFixed(1)))
-  })
-
-  return {
-    labels,
-    datasets: [
-      {
-        type: 'bar',
-        label: 'Durasi Problem (menit)',
-        backgroundColor: '#E91E63',
-        data: barData,
-        yAxisID: 'y'
-      },
-      {
-        type: 'line',
-        label: 'Kumulatif (%)',
-        borderColor: '#333b5f',
-        backgroundColor: 'rgba(51, 59, 95, 0.1)',
-        data: lineData,
-        yAxisID: 'y1',
-        tension: 0.3,
-        fill: false
-      }
-    ]
-  }
-})
 
 const executiveSummary = computed(() => {
   const kpi = executiveKpi.value
   const totalOutput = kpi.totalOutput
   const rejectRate = kpi.rejectRate
   const days = selectedDaysCount.value
+  const probSum = problemSummary.value
 
   if (!totalOutput) {
     return {
@@ -1099,10 +973,29 @@ const executiveSummary = computed(() => {
     main = `Produksi perlu perhatian: reject rate ${rejectRate.toFixed(2)}% tergolong tinggi.`
   }
 
+  if (rejectRate > 3 && probSum.topReason) {
+    main += ` Masalah utama: ${probSum.topReason.description}.`
+  }
+
   let trend = ''
   if (days > 1) {
     const avgOutputPerDay = totalOutput / days
     trend = `Rata-rata output per hari: ${avgOutputPerDay.toLocaleString('id-ID', { maximumFractionDigits: 0 })} unit selama ${days} hari.`
+    
+    // Trend Direction
+    const dailyData = productionPerDate.value.datasets?.[0]?.data || []
+    if (dailyData.length >= 2) {
+      const first = Number(dailyData[0] || 0)
+      const last = Number(dailyData[dailyData.length - 1] || 0)
+      const diff = last - first
+      if (diff > 0) {
+        trend += ` Tren output meningkat (+${diff.toLocaleString('id-ID')}) dari awal periode.`
+      } else if (diff < 0) {
+        trend += ` Tren output menurun (${diff.toLocaleString('id-ID')}) dari awal periode.`
+      }
+    }
+  } else {
+    trend = 'Data harian tunggal.'
   }
 
   return {
@@ -1181,27 +1074,9 @@ const workforceSummary = computed(() => {
     }
   })
 
-  const scatter = workerScatterData.value
-  const points = scatter.datasets?.[0]?.data || []
-  let riskyCount = 0
-  points.forEach(point => {
-    const output = Number(point.x || 0)
-    const reject = Number(point.y || 0)
-    if (output > 0) {
-      const rate = reject / output
-      if (output > maxOutput * 0.5 && rate > 0.08) {
-        riskyCount++
-      }
-    }
-  })
-
   const bestWorker = labels[maxIndex]
 
-  if (!riskyCount) {
-    return `Worker dengan output tertinggi adalah ${bestWorker} dengan total output ${maxOutput.toLocaleString('id-ID')}. Tidak ada pola worker ber-output tinggi dengan reject tinggi yang mencolok.`
-  }
-
-  return `Worker dengan output tertinggi adalah ${bestWorker} dengan total output ${maxOutput.toLocaleString('id-ID')}. Terdapat ${riskyCount} worker ber-output tinggi dengan reject relatif tinggi yang perlu dicek lebih detail.`
+  return `Worker dengan output tertinggi adalah ${bestWorker} dengan total output ${maxOutput.toLocaleString('id-ID')}.`
 })
 
 const qualitySummary = computed(() => {
@@ -1219,14 +1094,13 @@ const qualitySummary = computed(() => {
     }
   })
 
-  const pareto = problemPareto.value
-  const paretoLabels = pareto.labels || []
-  const paretoData = pareto.datasets?.[0]?.data || []
+  const probSummary = problemSummary.value
   let mainCategory = ''
   let mainDuration = 0
-  if (paretoLabels.length && paretoData.length) {
-    mainCategory = paretoLabels[0]
-    mainDuration = Number(paretoData[0] || 0)
+  
+  if (probSummary.topReason) {
+    mainCategory = probSummary.topReason.description
+    mainDuration = probSummary.topReason.totalDuration
   }
 
   if (!worstLabel && !mainCategory) {
@@ -1416,6 +1290,38 @@ const chartOptions = computed(() => {
   }
 })
 
+const trendChartOptions = computed(() => {
+  const opts = chartOptions.value
+  return {
+    ...opts,
+    plugins: {
+      ...opts.plugins,
+      tooltip: {
+        ...opts.plugins.tooltip,
+        callbacks: {
+          afterBody: (context) => {
+            const index = context[0].dataIndex
+            const dataset = context[0].dataset
+            const details = dataset.details ? dataset.details[index] : []
+            
+            if (!details || details.length === 0) return []
+            
+            // Limit to top 5 to avoid too long tooltip
+            const displayDetails = details.slice(0, 5)
+            const remaining = details.length - 5
+            
+            const lines = ['----------------', 'Details (Pos - Worker - Item):', ...displayDetails]
+            if (remaining > 0) {
+              lines.push(`...and ${remaining} more`)
+            }
+            return lines
+          }
+        }
+      }
+    }
+  }
+})
+
 const horizontalChartOptions = computed(() => {
   return {
     ...chartOptions.value,
@@ -1423,26 +1329,6 @@ const horizontalChartOptions = computed(() => {
   }
 })
 
-const paretoChartOptions = computed(() => {
-  const base = chartOptions.value
-  return {
-    ...base,
-    scales: {
-      ...base.scales,
-      y1: {
-        type: 'linear',
-        position: 'right',
-        grid: {
-          drawOnChartArea: false
-        },
-        ticks: {
-          ...base.scales.y.ticks,
-          callback: value => `${value}%`
-        }
-      }
-    }
-  }
-})
 
 const goBack = () => {
   router.push('/production-menu')
@@ -1457,8 +1343,6 @@ onMounted(() => {
   const today = getTodayDateString()
   filterDateFrom.value = today
   filterDateTo.value = today
-  dateFilterMode.value = 'today'
-  singleDate.value = today
   fetchData()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleResize)
@@ -1569,30 +1453,11 @@ onUnmounted(() => {
           </div>
 
           <div class="filter-group">
-            <label>Mode Filter Tanggal</label>
-            <select v-model="dateFilterMode" class="filter-input">
-              <option value="today">Hari ini</option>
-              <option value="single">Satu Tanggal</option>
-              <option value="range">Rentang Tanggal</option>
-            </select>
-          </div>
-
-          <div class="filter-group" v-if="dateFilterMode === 'today'">
-            <label>Tanggal</label>
-            <input type="date" v-model="filterDateFrom" class="filter-input" disabled />
-          </div>
-
-          <div class="filter-group" v-if="dateFilterMode === 'single'">
-            <label>Tanggal</label>
-            <input type="date" v-model="singleDate" class="filter-input" />
-          </div>
-
-          <div class="filter-group" v-if="dateFilterMode === 'range'">
             <label>Tanggal Dari</label>
             <input type="date" v-model="filterDateFrom" class="filter-input" />
           </div>
 
-          <div class="filter-group" v-if="dateFilterMode === 'range'">
+          <div class="filter-group">
             <label>Tanggal Sampai</label>
             <input type="date" v-model="filterDateTo" class="filter-input" />
           </div>
@@ -1680,6 +1545,56 @@ onUnmounted(() => {
             <p v-if="executiveSummary.trend" class="trend-summary">{{ executiveSummary.trend }}</p>
           </div>
         </div>
+
+        <div class="chart-card full-width" style="margin-top: 24px;">
+          <h3>Trend Output & Reject</h3>
+          <div class="chart-container">
+            <Line :data="productionPerDate" :options="trendChartOptions" :key="`date-${windowWidth}`" />
+          </div>
+
+          <div class="daily-breakdown-section" v-if="dailyProductionDetails.length > 0">
+            <h3>Detail Harian (Posisi, Worker, Item)</h3>
+            <div class="accordion-container">
+              <details v-for="day in dailyProductionDetails" :key="day.date" class="day-accordion">
+                <summary class="accordion-header">
+                  <span class="accordion-date">{{ day.displayDate }}</span>
+                  <div class="accordion-stats">
+                    <span class="stat-badge output">Output: {{ day.totalOutput.toLocaleString('id-ID') }}</span>
+                    <span class="stat-badge reject">Reject: {{ day.totalReject.toLocaleString('id-ID') }}</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </div>
+                </summary>
+                <div class="accordion-content">
+                  <div class="table-responsive">
+                    <table class="detail-table">
+                      <thead>
+                        <tr>
+                          <th>Posisi / Sub</th>
+                          <th>Worker</th>
+                          <th>Item</th>
+                          <th class="text-right">Output</th>
+                          <th class="text-right">Reject</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(detail, idx) in day.details" :key="idx">
+                          <td>
+                            <div class="fw-bold">{{ detail.position }}</div>
+                            <div class="text-muted small">{{ detail.subPosition }}</div>
+                          </td>
+                          <td>{{ detail.worker }}</td>
+                          <td>{{ detail.item }}</td>
+                          <td class="text-right font-mono">{{ detail.output.toLocaleString('id-ID') }}</td>
+                          <td class="text-right font-mono text-danger">{{ detail.reject.toLocaleString('id-ID') }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="dashboard-section">
@@ -1757,12 +1672,6 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="chart-card full-width">
-            <h3>Produktivitas Worker (Output vs Reject)</h3>
-            <div class="chart-container">
-              <Scatter :data="workerScatterData" :options="chartOptions" :key="`worker-scatter-${windowWidth}`" />
-            </div>
-          </div>
 
           <div class="chart-card">
             <h3>Produksi per Shift</h3>
@@ -1771,12 +1680,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="chart-card" v-if="departmentSummary.chartData.labels.length > 0">
-            <h3>Produksi per Department</h3>
-            <div class="chart-container">
-              <Bar :data="departmentSummary.chartData" :options="chartOptions" :key="`dept-${windowWidth}`" />
-            </div>
-          </div>
+
         </div>
         <div class="chart-insight">
           <p>{{ workforceSummary }}</p>
@@ -1803,26 +1707,8 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div class="chart-card full-width">
-            <h3>Trend Output & Reject per Tanggal (30 Hari)</h3>
-            <div class="chart-container">
-              <Line :data="productionPerDate" :options="chartOptions" :key="`date-${windowWidth}`" />
-            </div>
-          </div>
 
-          <div
-            v-if="problemPareto.labels && problemPareto.labels.length > 0"
-            class="chart-card full-width"
-          >
-            <h3>Problem Comments Pareto (80/20)</h3>
-            <div class="chart-container">
-              <Bar
-                :data="problemPareto"
-                :options="paretoChartOptions"
-                :key="`pareto-${windowWidth}`"
-              />
-            </div>
-          </div>
+
 
           <div
             v-if="problemSummary.chartData.labels && problemSummary.chartData.labels.length > 0"
@@ -2218,6 +2104,144 @@ onUnmounted(() => {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
+}
+
+/* Daily Breakdown Accordion */
+.daily-breakdown-section {
+  margin-top: 2rem;
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.daily-breakdown-section h3 {
+  margin: 0 0 1rem 0;
+  font-size: 1.1rem;
+  color: #333b5f;
+}
+
+.accordion-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.day-accordion {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.day-accordion details > summary {
+  list-style: none;
+  padding: 1rem;
+  background: #f8fafc;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.day-accordion details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.day-accordion details[open] > summary {
+  background: #eff6ff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.accordion-date {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.accordion-stats {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.stat-badge {
+  font-size: 0.85rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.stat-badge.output {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.stat-badge.reject {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.chevron {
+  transition: transform 0.2s;
+  color: #64748b;
+}
+
+.day-accordion details[open] .chevron {
+  transform: rotate(180deg);
+}
+
+.accordion-content {
+  padding: 0;
+  background: white;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.detail-table th {
+  background: #f1f5f9;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.detail-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.detail-table tr:last-child td {
+  border-bottom: none;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.font-mono {
+  font-family: 'SF Mono', 'Roboto Mono', monospace;
+}
+
+.text-danger {
+  color: #ef4444;
+}
+
+.text-muted {
+  color: #64748b;
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.fw-bold {
+  font-weight: 600;
 }
 
 .btn-back:hover {

@@ -92,6 +92,10 @@ const unitLabel = computed(() => {
   return session.positionUnit || ''
 })
 
+const isTembakKawat = computed(() => {
+  return session.positionCode === 'TEMBAK_KAWAT'
+})
+
 // Target produksi yang cocok dengan posisi/sub posisi saat ini
 const currentTarget = computed(() => {
   const posId = session.positionId
@@ -141,8 +145,8 @@ const validateForm = () => {
     missingFields.push('Shift')
   }
 
-  // Validasi Supplier
-  if (!supplierId.value) {
+  // Validasi Supplier (Skip jika TEMBAK_KAWAT)
+  if (!isTembakKawat.value && !supplierId.value) {
     errors.value.supplierId = 'Supplier wajib dipilih'
     missingFields.push('Supplier')
   }
@@ -259,7 +263,7 @@ const submit = async () => {
       position_id: session.positionId,
       sub_position_id: session.subPositionId || null,
       shift_id: shiftId.value,
-      supplier_id: supplierId.value, // Supplier sekarang wajib, tidak bisa null
+      supplier_id: supplierId.value || null,
       item_id: itemDetail.value.id,
       qty_output: Number(qtyOutput.value || 0),
       qty_reject: Number(qtyReject.value || 0),
@@ -394,7 +398,7 @@ const logout = async () => {
               <span v-if="errors.shiftId" class="error-message">{{ errors.shiftId }}</span>
             </div>
 
-            <div class="form-group">
+            <div class="form-group" v-if="!isTembakKawat">
               <label for="supplier">
                 Supplier <span class="required-star">*</span>
               </label>
