@@ -58,7 +58,6 @@ import ProblemCommentsList from '../pages/ProblemCommentsList.vue'
 import ProblemCommentForm from '../pages/ProblemCommentForm.vue'
 
 // IT Dashboard
-import ITDashboard from '../pages/ITDashboard.vue'
 import ServerStatus from '../pages/ServerStatus.vue'
 
 const routes = [
@@ -147,7 +146,6 @@ const routes = [
   { path: '/problem-comments/:id/edit', component: ProblemCommentForm },
   
   // IT Dashboard
-  { path: '/it-dashboard', component: ITDashboard },
 
   { path: '/pajak', component: HomePage }, // Placeholder - bisa diganti dengan halaman pajak nanti
   { path: '/pilihan3', component: HomePage }, // Placeholder - bisa diganti dengan halaman pilihan3 nanti
