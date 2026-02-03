@@ -13,6 +13,7 @@ const shifts = ref([])
 const suppliers = ref([])
 const comments = ref([])
 const productionTargets = ref([])
+const allItems = ref([]) // Store all items for suggestions
 
 const shiftId = ref('')
 const supplierId = ref('')
@@ -66,17 +67,19 @@ onMounted(async () => {
   isLoading.value = true
 
   try {
-    const [shiftRes, supplierRes, commentRes, targetRes] = await Promise.all([
+    const [shiftRes, supplierRes, commentRes, targetRes, itemsRes] = await Promise.all([
       api.get('/shifts'),
       api.get('/suppliers'),
       api.get('/problem-comments'),
-      api.get('/production-targets')
+      api.get('/production-targets'),
+      api.get('/items')
     ])
 
     shifts.value = shiftRes.data
     suppliers.value = supplierRes.data
     comments.value = commentRes.data
     productionTargets.value = targetRes.data
+    allItems.value = itemsRes.data
     
     createdAtDate.value = getTodayLocalISODate()
   } catch (error) {
@@ -86,6 +89,12 @@ onMounted(async () => {
     isLoading.value = false
   }
 })
+
+const getItemLabel = (item) => {
+  if (!item) return ''
+  if (item.item_name) return `${item.item_number} - ${item.item_name}`
+  return item.item_number
+}
 
 /* ===== unit otomatis (pcs / lmbr) ===== */
 const unitLabel = computed(() => {
@@ -111,6 +120,13 @@ const currentTarget = computed(() => {
 const loadItem = async () => {
   if (!itemNumber.value) {
     itemDetail.value = null
+    return
+  }
+
+  // Check in-memory first
+  const found = allItems.value.find(i => i.item_number === itemNumber.value)
+  if (found) {
+    itemDetail.value = found
     return
   }
 
@@ -436,16 +452,20 @@ const logout = async () => {
             <label for="itemNumber">
               Item Number <span class="required-star">*</span>
             </label>
-            <div class="input-with-loader">
+            <div class="input-with-loader relative-container">
               <input 
                 id="itemNumber" 
                 v-model="itemNumber" 
-                placeholder="Masukkan Item Number" 
+                list="production-input-items"
+                placeholder="Ketik item number" 
                 @blur="loadItem"
-                :class="['form-input', { 'error-field': errors.itemNumber }]"
                 @input="errors.itemNumber = ''"
+                :class="['form-input', { 'error-field': errors.itemNumber }]"
+                autocomplete="off"
               />
-              <div v-if="isLoadingItem" class="loader-spinner"></div>
+              <datalist id="production-input-items">
+                <option v-for="i in allItems" :key="i.id" :value="i.item_number">{{ getItemLabel(i) }}</option>
+              </datalist>
             </div>
             <span v-if="errors.itemNumber" class="error-message">{{ errors.itemNumber }}</span>
           </div>
@@ -642,6 +662,46 @@ const logout = async () => {
   font-weight: 700;
   color: #333b5f;
   letter-spacing: -0.5px;
+}
+
+/* Autocomplete Styles */
+.relative-container {
+  position: relative;
+}
+
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-top: 4px;
+  list-style: none;
+  padding: 0;
+}
+
+.suggestions-list li {
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.95rem;
+  color: #475569;
+}
+
+.suggestions-list li:last-child {
+  border-bottom: none;
+}
+
+.suggestions-list li:hover {
+  background: #f8fafc;
+  color: #333b5f;
 }
 
 .logout-button {
